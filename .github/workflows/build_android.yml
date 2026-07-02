@@ -29,7 +29,9 @@ jobs:
         run: flutter clean
 
       - name: Create new android folder
-        run: flutter create --no-overwrite --platforms=android --project-name tarweeqa_erp --org com.example .
+        run: |
+          rm -rf android
+          flutter create --platforms=android --project-name tarweeqa --org com.example .
 
       - name: Install dependencies
         run: flutter pub get
