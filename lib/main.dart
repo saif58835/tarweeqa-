@@ -9,6 +9,15 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'dart:async';
+// ======== إضافة لالتقاط الأخطاء وإظهارها ========
+FlutterError.onError = (FlutterErrorDetails details) {
+  if (kDebugMode) {
+    FlutterError.dumpErrorToConsole(details);
+  } else {
+    print(details.exception);
+  }
+};
+// ============================================
 import 'dart:math';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
