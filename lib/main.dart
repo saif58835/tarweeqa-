@@ -1405,7 +1405,8 @@ class MyApp extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
-        cardTheme: const CardThemeData(
+        // FIXED: CardThemeData is not a constructor with shape parameters like that in Material 3
+        cardTheme: CardTheme(
           color: Colors.white,
           elevation: 3,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
