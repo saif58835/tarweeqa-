@@ -33,7 +33,7 @@ jobs:
           rm -rf android
           flutter create --platforms=android --project-name tarweeqa --org com.example .
 
-      - name: Fix minSdkVersion (permanent fix)
+      - name: Fix minSdkVersion
         run: |
           FILE=""
           if [ -f "android/app/build.gradle.kts" ]; then
@@ -41,23 +41,23 @@ jobs:
           elif [ -f "android/app/build.gradle" ]; then
             FILE="android/app/build.gradle"
           fi
-
-          echo "===== الملف المستخدم: $FILE ====="
-          cat "$FILE"
-
-          # يطابق minSdk = flutter.minSdkVersion بأي صيغة (مع أو بدون toInt، مسافات مختلفة)
           perl -0pi -e 's/minSdk\s*=\s*flutter\.minSdkVersion(\.toInt\(\))?/minSdk = 23/g' "$FILE"
-          # يطابق الصيغة القديمة minSdkVersion flutter.minSdkVersion لو موجودة
           perl -0pi -e 's/minSdkVersion\s+flutter\.minSdkVersion/minSdkVersion 23/g' "$FILE"
+          grep -E "minSdk( )?= 23|minSdkVersion 23" "$FILE" || (echo "❌ فشل تعديل minSdk" && exit 1)
+          echo "✅ minSdk تم تعديله"
 
-          echo "===== بعد التعديل ====="
-          cat "$FILE"
-
-          if grep -qE "minSdk( )?= 23|minSdkVersion 23" "$FILE"; then
-            echo "✅ تم التعديل بنجاح"
+      - name: Fix Kotlin version
+        run: |
+          TOPFILE="android/build.gradle"
+          echo "===== قبل ====="
+          cat "$TOPFILE"
+          perl -0pi -e "s/ext\.kotlin_version\s*=\s*'[^']*'/ext.kotlin_version = '1.9.22'/g" "$TOPFILE"
+          echo "===== بعد ====="
+          cat "$TOPFILE"
+          if grep -q "kotlin_version = '1.9.22'" "$TOPFILE"; then
+            echo "✅ Kotlin version تم تعديله"
           else
-            echo "❌ فشل التعديل!"
-            exit 1
+            echo "⚠️ لم يتم العثور على ext.kotlin_version، قد تكون البنية مختلفة"
           fi
 
       - name: Install dependencies
