@@ -138,7 +138,7 @@ class GlobalErrorHandler {
 
 class PaginatedResult<T> {
   final List<T> documents;
-  final T? lastDocument;
+  final DocumentSnapshot? lastDocument; // FIXED: كان T? وهذا كان يسبب تعارض الأنواع
   final bool hasMore;
 
   PaginatedResult({
@@ -1405,7 +1405,6 @@ class MyApp extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
-        // FIXED: CardThemeData is not a constructor with shape parameters like that in Material 3
         cardTheme: CardTheme(
           color: Colors.white,
           elevation: 3,
