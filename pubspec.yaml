@@ -22,6 +22,7 @@ dependencies:
   share_plus: ^10.1.2
   path_provider: ^2.1.4
   vibration: ^2.0.0
+  connectivity_plus: ^6.0.5
 
 dev_dependencies:
   flutter_test:
