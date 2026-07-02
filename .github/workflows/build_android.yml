@@ -33,10 +33,33 @@ jobs:
           rm -rf android
           flutter create --platforms=android --project-name tarweeqa --org com.example .
 
-      - name: Fix minSdkVersion
+      - name: Fix minSdkVersion (permanent fix)
         run: |
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
-          sed -i 's/minSdk = flutter.minSdkVersion/minSdk = 23/' android/app/build.gradle.kts 2>/dev/null || true
+          GRADLE_KTS="android/app/build.gradle.kts"
+          GRADLE_GROOVY="android/app/build.gradle"
+
+          echo "===== ظ‚ط¨ظ„ ط§ظ„طھط¹ط¯ظٹظ„ ====="
+          cat "$GRADLE_KTS" 2>/dev/null || cat "$GRADLE_GROOVY" 2>/dev/null
+
+          if [ -f "$GRADLE_KTS" ]; then
+            perl -0pi -e 's/minSdk\s*=\s*flutter\.minSdkVersion(\.toInt\(\))?/minSdk = 23/g' "$GRADLE_KTS"
+          fi
+          if [ -f "$GRADLE_GROOVY" ]; then
+            perl -0pi -e 's/minSdkVersion\s+flutter\.minSdkVersion/minSdkVersion 23/g' "$GRADLE_GROOVY"
+          fi
+
+          echo "===== ط¨ط¹ط¯ ط§ظ„طھط¹ط¯ظٹظ„ ====="
+          cat "$GRADLE_KTS" 2>/dev/null || cat "$GRADLE_GROOVY" 2>/dev/null
+
+          echo "===== ط§ظ„طھط­ظ‚ظ‚ ====="
+          if [ -f "$GRADLE_KTS" ] && grep -q "minSdk = 23" "$GRADLE_KTS"; then
+            echo "âœ… طھظ… ط§ظ„طھط¹ط¯ظٹظ„ ط¨ظ†ط¬ط§ط­"
+          elif [ -f "$GRADLE_GROOVY" ] && grep -q "minSdkVersion 23" "$GRADLE_GROOVY"; then
+            echo "âœ… طھظ… ط§ظ„طھط¹ط¯ظٹظ„ ط¨ظ†ط¬ط§ط­"
+          else
+            echo "â‌Œ ظپط´ظ„ ط§ظ„طھط¹ط¯ظٹظ„!"
+            exit 1
+          fi
 
       - name: Install dependencies
         run: flutter pub get
