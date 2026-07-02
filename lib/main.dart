@@ -1,23 +1,28 @@
 // ============================================================================
-// TARWEEQA ERP - FINAL PRODUCTION VERSION
+// TARWEEQA ERP - FINAL PRODUCTION VERSION (FIXED)
 // ============================================================================
 
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'package:crypto/crypto.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:vibration/vibration.dart';
+
+// ============================================================================
+// PART 1: CORE CONSTANTS & EXCEPTIONS
+// ============================================================================
 
 const String kAppName = "ترويقة ERP";
 const Color kPrimary = Color(0xFF1565C0);
@@ -52,6 +57,10 @@ class StockException extends AppException {
 class RemoteControlException extends AppException {
   RemoteControlException(String message, {Object? error}) : super(message, originalError: error);
 }
+
+// ============================================================================
+// PART 2: UTILITIES
+// ============================================================================
 
 class Utils {
   static String hashString(String input) {
@@ -123,9 +132,13 @@ class GlobalErrorHandler {
   }
 }
 
+// ============================================================================
+// PART 3: PAGINATION HELPER
+// ============================================================================
+
 class PaginatedResult<T> {
   final List<T> documents;
-  final DocumentSnapshot? lastDocument;
+  final T? lastDocument;
   final bool hasMore;
 
   PaginatedResult({
@@ -138,6 +151,10 @@ class PaginatedResult<T> {
   bool get isNotEmpty => documents.isNotEmpty;
   int get length => documents.length;
 }
+
+// ============================================================================
+// PART 4: DATA MODELS
+// ============================================================================
 
 class CartItem {
   final String productId;
@@ -363,6 +380,10 @@ class Store {
     );
   }
 }
+
+// ============================================================================
+// PART 5: SERVICES
+// ============================================================================
 
 class AuthService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
@@ -777,6 +798,10 @@ class RemoteConfigService {
   }
 }
 
+// ============================================================================
+// PART 6: REPOSITORY
+// ============================================================================
+
 class InvoiceRepository {
   final DatabaseService _database = DatabaseService();
   final RemoteConfigService _remoteConfig = RemoteConfigService();
@@ -1057,82 +1082,9 @@ class DailyReport {
   });
 }
 
-class AutoBackupService {
-  static final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  static const String kVersionKey = 'app_version';
-
-  static Future<void> checkAndBackup() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      final currentVersion = '1.0.0';
-      final savedVersion = prefs.getString(kVersionKey);
-
-      if (savedVersion != currentVersion) {
-        print('تحديث جديد: $savedVersion الى $currentVersion');
-        await _performFullBackup();
-        await prefs.setString(kVersionKey, currentVersion);
-        print('تم حفظ النسخة الجديدة: $currentVersion');
-      } else {
-        print('لا يوجد تحديث جديد، تخطي النسخ الاحتياطي');
-      }
-    } catch (e) {
-      print('فشل النسخ الاحتياطي التلقائي: $e');
-    }
-  }
-
-  static Future<void> _performFullBackup() async {
-    final stores = await _firestore.collection('stores').get();
-    for (final storeDoc in stores.docs) {
-      final storeId = storeDoc.id;
-      final backupData = <String, dynamic>{};
-      backupData['store'] = storeDoc.data();
-
-      final groups = await _firestore
-          .collection('stores').doc(storeId).collection('groups')
-          .where('pending_delete', isEqualTo: false).get();
-      final groupsData = [];
-      for (var g in groups.docs) {
-        final products = await _firestore
-            .collection('stores').doc(storeId).collection('groups').doc(g.id).collection('products')
-            .where('pending_delete', isEqualTo: false).get();
-        groupsData.add({
-          'id': g.id,
-          'name': g['name'],
-          'color': g['color'],
-          'order': g['order'],
-          'products': products.docs.map((p) => p.data()).toList(),
-        });
-      }
-      backupData['groups'] = groupsData;
-
-      final invoices = await _firestore
-          .collection('stores').doc(storeId).collection('invoices')
-          .where('pending_delete', isEqualTo: false).get();
-      backupData['invoices'] = invoices.docs.map((i) => i.data()).toList();
-
-      final employees = await _firestore
-          .collection('employees').where('storeId', isEqualTo: storeId).get();
-      backupData['employees'] = employees.docs.map((e) => e.data()).toList();
-
-      await _firestore
-          .collection('stores').doc(storeId).collection('backups')
-          .add({
-        'data': backupData,
-        'version': '1.0.0',
-        'createdAt': FieldValue.serverTimestamp(),
-        'type': 'pre_update',
-      });
-
-      final json = jsonEncode(backupData);
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = 'backup_${storeId}_${DateTime.now().millisecondsSinceEpoch}.json';
-      final file = File('${dir.path}/$fileName');
-      await file.writeAsString(json);
-      
-      print('تم أخذ نسخة احتياطية للمتجر $storeId');
-    }
-  }
-}
+// ============================================================================
+// PART 7: APP CONTROLLER (GetX)
+// ============================================================================
 
 class AppController extends GetxController {
   final AuthService _authService = AuthService();
@@ -1265,10 +1217,7 @@ class AppController extends GetxController {
             content: const Text("تم إيقاف التطبيق من قبل المسؤول. يرجى التواصل مع الدعم."),
             actions: [
               TextButton(
-                onPressed: () {
-                  Get.back();
-                  SystemNavigator.pop();
-                },
+                onPressed: () => SystemNavigator.pop(),
                 child: const Text("خروج"),
               ),
             ],
@@ -1292,7 +1241,7 @@ class AppController extends GetxController {
         duration: const Duration(seconds: 4),
         icon: const Icon(Icons.currency_exchange, color: Colors.white),
       );
-      HapticFeedback.lightImpact();
+      Vibration.vibrate(duration: 200);
     }
   }
 
@@ -1302,7 +1251,7 @@ class AppController extends GetxController {
       await _databaseService.addGroup(storeId, name, color);
       Get.snackbar('نجاح', 'تم إضافة القسم بنجاح',
           backgroundColor: Colors.green, colorText: Colors.white);
-      HapticFeedback.lightImpact();
+      Vibration.vibrate(duration: 100);
     } catch (e) {
       Get.snackbar('خطأ', 'فشل إضافة القسم: $e',
           backgroundColor: Colors.red, colorText: Colors.white);
@@ -1316,7 +1265,7 @@ class AppController extends GetxController {
       await _databaseService.updateGroup(storeId, groupId, newName);
       Get.snackbar('نجاح', 'تم تعديل القسم بنجاح',
           backgroundColor: Colors.green, colorText: Colors.white);
-      HapticFeedback.lightImpact();
+      Vibration.vibrate(duration: 100);
     } catch (e) {
       Get.snackbar('خطأ', 'فشل تعديل القسم: $e',
           backgroundColor: Colors.red, colorText: Colors.white);
@@ -1328,7 +1277,7 @@ class AppController extends GetxController {
       await _databaseService.softDelete(collectionPath, docId, requestedBy);
       Get.snackbar('طلب حذف', 'تم إرسال طلب الحذف للمراجعة',
           backgroundColor: Colors.orange, colorText: Colors.white);
-      HapticFeedback.mediumImpact();
+      Vibration.vibrate(duration: 200);
     } catch (e) {
       Get.snackbar('خطأ', 'فشل طلب الحذف: $e',
           backgroundColor: Colors.red, colorText: Colors.white);
@@ -1371,7 +1320,7 @@ class AppController extends GetxController {
       Get.snackbar('نجاح', isDebt ? 'تم حفظ الفاتورة في قسم الدين' : 'تم حفظ الفاتورة بنجاح',
           backgroundColor: isDebt ? Colors.orange : Colors.green,
           colorText: Colors.white);
-      HapticFeedback.heavyImpact();
+      Vibration.vibrate(duration: 300);
       return invoice;
     } catch (e) {
       Get.snackbar('خطأ', 'فشل حفظ الفاتورة: $e',
@@ -1384,28 +1333,36 @@ class AppController extends GetxController {
   }
 }
 
+// ============================================================================
+// PART 8: MAIN APP & ENTRY POINT
+// ============================================================================
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await Firebase.initializeApp(
-    options: FirebaseOptions(
-      apiKey: "AIzaSyCFNad5ADOdWKfWJf6UfwaGb4s17sjcjDs",
-      appId: Platform.isIOS 
-          ? "1:915069495500:ios:99fc5f8a6deaf86ce77a69"
-          : "1:915069495500:android:80f6a8ebc128e249e77a69",
-      messagingSenderId: "915069495500",
-      projectId: "tarweeqa-erp",
-      storageBucket: "tarweeqa-erp.firebasestorage.app",
-      iosBundleId: Platform.isIOS ? "com.example.tarweeqa" : null,
-    ),
+    options: Platform.isIOS
+        ? const FirebaseOptions(
+            apiKey: "AIzaSyADUCM_AF06V501wvaQ-jibN5jmv0gzo30",
+            appId: "1:915069495500:ios:99fc5f8a6deaf86ce77a69",
+            messagingSenderId: "915069495500",
+            projectId: "tarweeqa-erp",
+            storageBucket: "tarweeqa-erp.firebasestorage.app",
+            iosBundleId: "com.example.tarweeqa",
+          )
+        : const FirebaseOptions(
+            apiKey: "AIzaSyCFNad5ADOdWKfWJf6UfwaGb4s17sjcjDs",
+            appId: "1:915069495500:android:80f6a8ebc128e249e77a69",
+            messagingSenderId: "915069495500",
+            projectId: "tarweeqa-erp",
+            storageBucket: "tarweeqa-erp.firebasestorage.app",
+          ),
   );
 
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
-
-  await AutoBackupService.checkAndBackup();
 
   Get.put(AppController());
 
@@ -1429,15 +1386,15 @@ class MyApp extends StatelessWidget {
       title: kAppName,
       theme: ThemeData(
         useMaterial3: true,
-        scaffoldBackgroundColor: const Color(0xFF7BB3D9),
+        scaffoldBackgroundColor: kBg,
         colorScheme: ColorScheme.fromSeed(
           seedColor: kPrimaryLight,
           primary: kPrimaryLight,
           secondary: const Color(0xFF64B5F6),
-          surface: Colors.white.withOpacity(0.95),
+          surface: Colors.white,
         ),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color(0xFF1B4F72),
+          backgroundColor: kPrimaryLight,
           foregroundColor: Colors.white,
           elevation: 0,
         ),
@@ -1448,7 +1405,7 @@ class MyApp extends StatelessWidget {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         ),
-        cardTheme: CardTheme(
+        cardTheme: const CardThemeData(
           color: Colors.white,
           elevation: 3,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1464,181 +1421,9 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class TarweeqaBackground extends StatelessWidget {
-  final Widget child;
-  const TarweeqaBackground({super.key, required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF7BB3D9), Color(0xFFA8D5F0), Color(0xFF5A9BC7)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-            ),
-            child: Stack(
-              children: [
-                Positioned(top: 40, left: 10, child: _buildMilkCarton()),
-                Positioned(top: 80, right: 10, child: _buildCheeseWedge()),
-                Positioned(top: 15, right: 90, child: _buildButterBlock()),
-                Positioned(top: 100, right: 140, child: _buildEggs()),
-                Positioned(bottom: 80, left: 10, child: _buildOliveJar()),
-                Positioned(bottom: 30, right: 15, child: _buildYogurtBowl()),
-                Positioned(bottom: 120, right: 130, child: _buildJamJar()),
-              ],
-            ),
-          ),
-        ),
-        Positioned.fill(
-          child: Container(color: Colors.black.withOpacity(0.15)),
-        ),
-        SafeArea(child: child),
-      ],
-    );
-  }
-
-  Widget _buildMilkCarton() {
-    return Transform.rotate(
-      angle: -0.15,
-      child: Container(
-        width: 50,
-        height: 70,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: const BorderRadius.only(
-            topLeft: Radius.circular(8),
-            topRight: Radius.circular(8),
-          ),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-        ),
-        child: Stack(
-          children: [
-            Align(
-              alignment: Alignment.topCenter,
-              child: Container(
-                width: 30,
-                height: 20,
-                decoration: const BoxDecoration(
-                  color: Color(0xFF1B4F72),
-                  borderRadius: BorderRadius.only(
-                    bottomLeft: Radius.circular(4),
-                    bottomRight: Radius.circular(4),
-                  ),
-                ),
-                child: const Center(child: Text("🐮", style: TextStyle(fontSize: 12))),
-              ),
-            ),
-            const Align(
-              alignment: Alignment.center,
-              child: Text("🥛", style: TextStyle(fontSize: 20)),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildCheeseWedge() {
-    return Transform.rotate(
-      angle: 0.2,
-      child: Container(
-        width: 35,
-        height: 30,
-        decoration: BoxDecoration(
-          color: const Color(0xFFFFD700),
-          borderRadius: BorderRadius.circular(4),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-        ),
-        child: const Center(child: Text("🧀", style: TextStyle(fontSize: 16))),
-      ),
-    );
-  }
-
-  Widget _buildButterBlock() {
-    return Container(
-      width: 45,
-      height: 25,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFACD),
-        borderRadius: BorderRadius.circular(4),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-      ),
-      child: const Center(child: Text("🧈", style: TextStyle(fontSize: 18))),
-    );
-  }
-
-  Widget _buildEggs() {
-    return Container(
-      width: 60,
-      height: 40,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-      ),
-      child: const Center(child: Text("🥚🥚🥚", style: TextStyle(fontSize: 16))),
-    );
-  }
-
-  Widget _buildOliveJar() {
-    return Container(
-      width: 40,
-      height: 55,
-      decoration: BoxDecoration(
-        color: const Color(0xFFE8F5E9),
-        borderRadius: BorderRadius.circular(8),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-      ),
-      child: const Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text("🫒", style: TextStyle(fontSize: 12)),
-          Text("🫒", style: TextStyle(fontSize: 12)),
-          Text("🫒", style: TextStyle(fontSize: 12)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildYogurtBowl() {
-    return Container(
-      width: 50,
-      height: 45,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(20),
-          topRight: Radius.circular(20),
-          bottomLeft: Radius.circular(8),
-          bottomRight: Radius.circular(8),
-        ),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-      ),
-      child: const Center(child: Text("🥣", style: TextStyle(fontSize: 24))),
-    );
-  }
-
-  Widget _buildJamJar() {
-    return Container(
-      width: 35,
-      height: 45,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFCE4EC),
-        borderRadius: const BorderRadius.only(
-          topLeft: Radius.circular(12),
-          topRight: Radius.circular(12),
-        ),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 4)],
-      ),
-      child: const Center(child: Text("🍯", style: TextStyle(fontSize: 18))),
-    );
-  }
-}
+// ============================================================================
+// PART 9: LOGIN PAGE
+// ============================================================================
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -1671,94 +1456,113 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return TarweeqaBackground(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Card(
-            elevation: 10,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 16),
-                    const Text(
-                      "ترويقة",
-                      style: TextStyle(
-                        fontSize: 36,
-                        fontWeight: FontWeight.w900,
-                        color: kPrimary,
+    return Scaffold(
+      body: Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+        ),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Card(
+              elevation: 10,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Form(
+                  key: _formKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text("🧀", style: TextStyle(fontSize: 32)),
+                          SizedBox(width: 8),
+                          Text("🥛", style: TextStyle(fontSize: 32)),
+                          SizedBox(width: 8),
+                          Text("🫙", style: TextStyle(fontSize: 32)),
+                        ],
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      "نظام إدارة المبيعات",
-                      style: TextStyle(color: Colors.grey, fontSize: 14),
-                    ),
-                    const SizedBox(height: 32),
-                    TextFormField(
-                      controller: _emailController,
-                      decoration: const InputDecoration(
-                        labelText: "البريد الإلكتروني",
-                        prefixIcon: Icon(Icons.email),
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'يرجى إدخال البريد الإلكتروني';
-                        }
-                        if (!value.contains('@')) {
-                          return 'بريد إلكتروني غير صالح';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _passwordController,
-                      obscureText: true,
-                      decoration: const InputDecoration(
-                        labelText: "كلمة المرور",
-                        prefixIcon: Icon(Icons.lock),
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'يرجى إدخال كلمة المرور';
-                        }
-                        if (value.length < 6) {
-                          return 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 24),
-                    Obx(() => SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton(
-                        onPressed: _appCtrl.isLoading.value ? null : _handleLogin,
-                        style: ElevatedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
+                      const SizedBox(height: 16),
+                      const Text(
+                        "تَرْوِيقَة",
+                        style: TextStyle(
+                          fontSize: 36,
+                          fontWeight: FontWeight.w900,
+                          color: kPrimary,
                         ),
-                        child: _appCtrl.isLoading.value
-                            ? const SizedBox(
-                                height: 20,
-                                width: 20,
-                                child: CircularProgressIndicator(color: Colors.white),
-                              )
-                            : const Text(
-                                "تسجيل الدخول",
-                                style: TextStyle(fontSize: 16),
-                              ),
                       ),
-                    )),
-                  ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        "نظام إدارة المبيعات",
+                        style: TextStyle(color: Colors.grey, fontSize: 14),
+                      ),
+                      const SizedBox(height: 32),
+                      TextFormField(
+                        controller: _emailController,
+                        decoration: const InputDecoration(
+                          labelText: "البريد الإلكتروني",
+                          prefixIcon: Icon(Icons.email),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'يرجى إدخال البريد الإلكتروني';
+                          }
+                          if (!value.contains('@')) {
+                            return 'بريد إلكتروني غير صالح';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _passwordController,
+                        obscureText: true,
+                        decoration: const InputDecoration(
+                          labelText: "كلمة المرور",
+                          prefixIcon: Icon(Icons.lock),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.isEmpty) {
+                            return 'يرجى إدخال كلمة المرور';
+                          }
+                          if (value.length < 6) {
+                            return 'كلمة المرور يجب أن تكون 6 أحرف على الأقل';
+                          }
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 24),
+                      Obx(() => SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: _appCtrl.isLoading.value ? null : _handleLogin,
+                          style: ElevatedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                          ),
+                          child: _appCtrl.isLoading.value
+                              ? const SizedBox(
+                                  height: 20,
+                                  width: 20,
+                                  child: CircularProgressIndicator(color: Colors.white),
+                                )
+                              : const Text(
+                                  "تسجيل الدخول",
+                                  style: TextStyle(fontSize: 16),
+                                ),
+                        ),
+                      )),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1769,6 +1573,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 }
 
+// ============================================================================
+// PART 10: HOME PAGE
+// ============================================================================
+
 class HomePage extends StatelessWidget {
   const HomePage({super.key});
 
@@ -1776,235 +1584,232 @@ class HomePage extends StatelessWidget {
   Widget build(BuildContext context) {
     final appCtrl = Get.find<AppController>();
 
-    return TarweeqaBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
           ),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text("ترويقة",
-                    style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: Colors.white)),
+        ),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(8),
               ),
-              const SizedBox(width: 8),
-              const Text("| الأقسام", style: TextStyle(fontSize: 14, color: Colors.white70)),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () => Get.to(() => const SettingsPage()),
+              child: const Text("تَرْوِيقَة",
+                  style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: Colors.white)),
             ),
-            IconButton(
-              icon: const Icon(Icons.logout),
-              onPressed: () => appCtrl.logout(),
-            ),
+            const SizedBox(width: 8),
+            const Text("| الأقسام", style: TextStyle(fontSize: 14, color: Colors.white70)),
           ],
         ),
-        body: Obx(() {
-          final storeId = appCtrl.currentStoreId.value;
-          if (storeId == null) {
-            return const Center(child: Text("لم يتم ربط المتجر"));
-          }
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.settings),
+            onPressed: () => Get.to(() => const SettingsPage()),
+          ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: () => appCtrl.logout(),
+          ),
+        ],
+      ),
+      body: Obx(() {
+        final storeId = appCtrl.currentStoreId.value;
+        if (storeId == null) {
+          return const Center(child: Text("لم يتم ربط المتجر"));
+        }
 
-          return Column(
-            children: [
-              StreamBuilder<DocumentSnapshot>(
-                stream: FirebaseFirestore.instance.collection('stores').doc(storeId).snapshots(),
-                builder: (context, snap) {
-                  if (snap.hasError) {
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      color: Colors.red[100],
-                      child: const Text("خطأ في تحميل سعر الدولار", style: TextStyle(color: Colors.red)),
-                    );
-                  }
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                    );
-                  }
-
-                  double rate = appCtrl.dollarRate.value;
-                  if (snap.hasData && snap.data!.exists) {
-                    final data = snap.data!.data() as Map<String, dynamic>?;
-                    if (data != null && data['dollarRate'] != null) {
-                      rate = (data['dollarRate'] as num).toDouble();
-                      if (rate != appCtrl.dollarRate.value) {
-                        WidgetsBinding.instance.addPostFrameCallback((_) {
-                          appCtrl.dollarRate.value = rate;
-                          appCtrl.checkDollarRateChange(rate);
-                        });
-                      }
-                    }
-                  }
+        return Column(
+          children: [
+            StreamBuilder<DocumentSnapshot>(
+              stream: FirebaseFirestore.instance.collection('stores').doc(storeId).snapshots(),
+              builder: (context, snap) {
+                if (snap.hasError) {
                   return Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    color: const Color(0xFFE3F2FD),
-                    child: Text(
-                      "${appCtrl.employeeName.value}   |   ${NumberFormat("#,##0").format(rate)} ل.س",
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimary, fontSize: 13),
-                      textAlign: TextAlign.center,
-                    ),
+                    padding: const EdgeInsets.all(12),
+                    color: Colors.red[100],
+                    child: const Text("خطأ في تحميل سعر الدولار", style: TextStyle(color: Colors.red)),
                   );
-                },
-              ),
-              _NavRow(storeId: storeId),
-              Expanded(
-                child: StreamBuilder<QuerySnapshot>(
-                  stream: FirebaseFirestore.instance
-                      .collection('stores').doc(storeId).collection('groups')
-                      .where('pending_delete', isEqualTo: false)
-                      .orderBy('order').snapshots(),
-                  builder: (context, snapshot) {
-                    if (snapshot.hasError) {
-                      return Center(child: Text("خطأ: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
-                    }
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      return const Center(child: CircularProgressIndicator());
-                    }
-                    if (!snapshot.hasData) {
-                      return const Center(child: Text("لا توجد أقسام", style: TextStyle(color: Colors.grey)));
-                    }
+                }
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                  );
+                }
 
-                    final groups = snapshot.data!.docs;
-                    return GridView.builder(
-                      padding: const EdgeInsets.all(16),
-                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        crossAxisSpacing: 14,
-                        mainAxisSpacing: 14,
-                        childAspectRatio: 1.1,
-                      ),
-                      itemCount: groups.length + 1,
-                      itemBuilder: (context, index) {
-                        if (index == groups.length) {
-                          return GestureDetector(
-                            onTap: () => _addGroupDialog(context, appCtrl, storeId),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(18),
-                                border: Border.all(color: Colors.grey[300]!),
-                              ),
-                              child: const Center(
-                                child: Column(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    Icon(Icons.add_circle_outline, size: 40, color: Colors.grey),
-                                    SizedBox(height: 6),
-                                    Text("قسم جديد", style: TextStyle(color: Colors.grey, fontSize: 13)),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        }
-                        final doc = groups[index];
-                        final data = doc.data() as Map<String, dynamic>;
-                        final color = data['color'] != null
-                            ? Color(data['color'] as int)
-                            : const Color(0xFFE3F2FD);
+                double rate = appCtrl.dollarRate.value;
+                if (snap.hasData && snap.data!.exists) {
+                  final data = snap.data!.data() as Map<String, dynamic>?;
+                  if (data != null && data['dollarRate'] != null) {
+                    rate = (data['dollarRate'] as num).toDouble();
+                    if (rate != appCtrl.dollarRate.value) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        appCtrl.dollarRate.value = rate;
+                        appCtrl.checkDollarRateChange(rate);
+                      });
+                    }
+                  }
+                }
+                return Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  color: const Color(0xFFE3F2FD),
+                  child: Text(
+                    "👤 ${appCtrl.employeeName.value}   |   💵 ${NumberFormat("#,##0").format(rate)} ل.س",
+                    style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimary, fontSize: 13),
+                    textAlign: TextAlign.center,
+                  ),
+                );
+              },
+            ),
+            _NavRow(storeId: storeId),
+            Expanded(
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('stores').doc(storeId).collection('groups')
+                    .where('pending_delete', isEqualTo: false)
+                    .orderBy('order').snapshots(),
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return Center(child: Text("خطأ: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
+                  }
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (!snapshot.hasData) {
+                    return const Center(child: Text("لا توجد أقسام", style: TextStyle(color: Colors.grey)));
+                  }
+
+                  final groups = snapshot.data!.docs;
+                  return GridView.builder(
+                    padding: const EdgeInsets.all(16),
+                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                      crossAxisCount: 2,
+                      crossAxisSpacing: 14,
+                      mainAxisSpacing: 14,
+                      childAspectRatio: 1.1,
+                    ),
+                    itemCount: groups.length + 1,
+                    itemBuilder: (context, index) {
+                      if (index == groups.length) {
                         return GestureDetector(
-                          onTap: () => Get.to(() => ProductsPage(
-                            storeId: storeId,
-                            groupId: doc.id,
-                            groupName: doc['name'],
-                          )),
-                          onLongPress: () => _showGroupOptions(context, appCtrl, storeId, doc),
+                          onTap: () => _addGroupDialog(context, appCtrl, storeId),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: color,
+                              color: Colors.grey[100],
                               borderRadius: BorderRadius.circular(18),
-                              boxShadow: [
-                                BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
-                              ],
+                              border: Border.all(color: Colors.grey[300]!),
                             ),
-                            child: Stack(
-                              children: [
-                                Center(
-                                  child: Text(doc['name'],
-                                      style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: kPrimary),
-                                      textAlign: TextAlign.center),
-                                ),
-                                Positioned(
-                                  top: 8, left: 8,
-                                  child: StreamBuilder<QuerySnapshot>(
-                                    stream: FirebaseFirestore.instance
-                                        .collection('stores').doc(storeId)
-                                        .collection('groups').doc(doc.id)
-                                        .collection('products')
-                                        .where('pending_delete', isEqualTo: false)
-                                        .snapshots(),
-                                    builder: (_, snap) {
-                                      if (snap.hasError) return const SizedBox();
-                                      if (snap.connectionState == ConnectionState.waiting) {
-                                        return Container(
+                            child: const Center(
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.add_circle_outline, size: 40, color: Colors.grey),
+                                  SizedBox(height: 6),
+                                  Text("قسم جديد", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      }
+                      final doc = groups[index];
+                      final data = doc.data() as Map<String, dynamic>;
+                      final color = data['color'] != null
+                          ? Color(data['color'] as int)
+                          : const Color(0xFFE3F2FD);
+                      return GestureDetector(
+                        onTap: () => Get.to(() => ProductsPage(
+                          storeId: storeId,
+                          groupId: doc.id,
+                          groupName: doc['name'],
+                        )),
+                        onLongPress: () => _showGroupOptions(context, appCtrl, storeId, doc),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: color,
+                            borderRadius: BorderRadius.circular(18),
+                            boxShadow: [
+                              BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, 4)),
+                            ],
+                          ),
+                          child: Stack(
+                            children: [
+                              Center(
+                                child: Text(doc['name'],
+                                    style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: kPrimary),
+                                    textAlign: TextAlign.center),
+                              ),
+                              Positioned(
+                                top: 8, left: 8,
+                                child: StreamBuilder<QuerySnapshot>(
+                                  stream: FirebaseFirestore.instance
+                                      .collection('stores').doc(storeId)
+                                      .collection('groups').doc(doc.id)
+                                      .collection('products')
+                                      .where('pending_delete', isEqualTo: false)
+                                      .snapshots(),
+                                  builder: (_, snap) {
+                                    if (snap.hasError) return const SizedBox();
+                                    if (snap.connectionState == ConnectionState.waiting) {
+                                      return Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: kPrimary.withOpacity(0.15),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: const Text("جاري التحميل...",
+                                            style: TextStyle(fontSize: 10, color: kPrimary)),
+                                      );
+                                    }
+                                    final count = snap.hasData ? snap.data!.docs.length : 0;
+                                    bool hasLow = false;
+                                    if (snap.hasData) {
+                                      for (var p in snap.data!.docs) {
+                                        if ((p['qty'] ?? 0).toDouble() <= 3) { hasLow = true; break; }
+                                      }
+                                    }
+                                    return Row(
+                                      children: [
+                                        Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                           decoration: BoxDecoration(
                                             color: kPrimary.withOpacity(0.15),
                                             borderRadius: BorderRadius.circular(8),
                                           ),
-                                          child: const Text("جاري التحميل...",
-                                              style: TextStyle(fontSize: 10, color: kPrimary)),
-                                        );
-                                      }
-                                      final count = snap.hasData ? snap.data!.docs.length : 0;
-                                      bool hasLow = false;
-                                      if (snap.hasData) {
-                                        for (var p in snap.data!.docs) {
-                                          if ((p['qty'] ?? 0).toDouble() <= 3) { hasLow = true; break; }
-                                        }
-                                      }
-                                      return Row(
-                                        children: [
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                            decoration: BoxDecoration(
-                                              color: kPrimary.withOpacity(0.15),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Text("$count منتج",
-                                                style: const TextStyle(fontSize: 10, color: kPrimary, fontWeight: FontWeight.bold)),
-                                          ),
-                                          if (hasLow) ...[
-                                            const SizedBox(width: 4),
-                                            const CircleAvatar(radius: 5, backgroundColor: Colors.red),
-                                          ]
-                                        ],
-                                      );
-                                    },
-                                  ),
+                                          child: Text("$count منتج",
+                                              style: const TextStyle(fontSize: 10, color: kPrimary, fontWeight: FontWeight.bold)),
+                                        ),
+                                        if (hasLow) ...[
+                                          const SizedBox(width: 4),
+                                          const CircleAvatar(radius: 5, backgroundColor: Colors.red),
+                                        ]
+                                      ],
+                                    );
+                                  },
                                 ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ),
-                        );
-                      },
-                    );
-                  },
-                ),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
-            ],
-          );
-        }),
-      ),
+            ),
+          ],
+        );
+      }),
     );
   }
 
@@ -2203,116 +2008,104 @@ class _NavBtn extends StatelessWidget {
   }
 }
 
-class SettingsPage extends StatefulWidget {
+// ============================================================================
+// PART 11: SETTINGS PAGE
+// ============================================================================
+
+class SettingsPage extends StatelessWidget {
   const SettingsPage({super.key});
 
   @override
-  State<SettingsPage> createState() => _SettingsPageState();
-}
-
-class _SettingsPageState extends State<SettingsPage> {
-  final appCtrl = Get.find<AppController>();
-  final nameCtrl = TextEditingController();
-  final rateCtrl = TextEditingController();
-
-  @override
-  void initState() {
-    super.initState();
-    nameCtrl.text = appCtrl.employeeName.value ?? 'موظف';
-    rateCtrl.text = appCtrl.dollarRate.value.toStringAsFixed(0);
-  }
-
-  @override
-  void dispose() {
-    nameCtrl.dispose();
-    rateCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return TarweeqaBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+    final appCtrl = Get.find<AppController>();
+
+    final nameCtrl = TextEditingController(text: appCtrl.employeeName.value);
+    final rateCtrl = TextEditingController(text: appCtrl.dollarRate.value.toStringAsFixed(0));
+
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+        ),
+        title: const Text("الإعدادات"),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          _section("معلومات الموظف"),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: "اسم الموظف"),
+                    onSubmitted: (_) => _autoSave(appCtrl, nameCtrl, rateCtrl),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: rateCtrl,
+                    keyboardType: TextInputType.number,
+                    decoration: const InputDecoration(labelText: "سعر الدولار (ل.س)"),
+                    onSubmitted: (_) => _autoSave(appCtrl, nameCtrl, rateCtrl),
+                  ),
+                ],
               ),
             ),
           ),
-          title: const Text("الإعدادات"),
-        ),
-        body: ListView(
-          padding: const EdgeInsets.all(16),
-          children: [
-            _section("معلومات الموظف"),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  children: [
-                    TextField(
-                      controller: nameCtrl,
-                      decoration: const InputDecoration(labelText: "اسم الموظف"),
-                      onSubmitted: (_) => _save(appCtrl),
-                    ),
-                    const SizedBox(height: 12),
-                    TextField(
-                      controller: rateCtrl,
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: "سعر الدولار (ل.س)"),
-                      onSubmitted: (_) => _save(appCtrl),
-                    ),
-                  ],
-                ),
+          const SizedBox(height: 16),
+          _section("النسخ الاحتياطي"),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text("تصدير كل بيانات المتجر كملف JSON وإرساله عبر واتساب أو حفظه",
+                      style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  const SizedBox(height: 10),
+                  ElevatedButton.icon(
+                    onPressed: () => _exportBackup(appCtrl.currentStoreId.value!),
+                    icon: const Icon(Icons.download),
+                    label: const Text("تصدير نسخة احتياطية"),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            _section("النسخ الاحتياطي"),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text("تصدير كل بيانات المتجر كملف JSON وإرساله عبر واتساب أو حفظه",
-                        style: TextStyle(fontSize: 12, color: Colors.grey)),
-                    const SizedBox(height: 10),
-                    ElevatedButton.icon(
-                      onPressed: () => _exportBackup(appCtrl.currentStoreId.value!),
-                      icon: const Icon(Icons.download),
-                      label: const Text("تصدير نسخة احتياطية"),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: () => _save(appCtrl),
-              style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-              child: const Text("حفظ الإعدادات", style: TextStyle(fontSize: 16)),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            onPressed: () => _save(appCtrl, nameCtrl, rateCtrl),
+            style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+            child: const Text("حفظ الإعدادات", style: TextStyle(fontSize: 16)),
+          ),
+        ],
       ),
     );
   }
 
-  void _save(AppController appCtrl) {
+  void _autoSave(AppController appCtrl, TextEditingController nameCtrl, TextEditingController rateCtrl) {
     final name = nameCtrl.text.trim().isEmpty ? "موظف" : nameCtrl.text.trim();
     final rate = double.tryParse(rateCtrl.text) ?? 15000.0;
     appCtrl.employeeName.value = name;
-    if (appCtrl.currentStoreId.value != null) {
-      appCtrl.database.updateDollarRate(appCtrl.currentStoreId.value!, rate);
-    }
     appCtrl.dollarRate.value = rate;
-    Get.snackbar('نجاح', 'تم حفظ الإعدادات',
+    Get.snackbar('تم الحفظ', 'تم الحفظ التلقائي',
         backgroundColor: Colors.green, colorText: Colors.white);
+  }
+
+  void _save(AppController appCtrl, TextEditingController nameCtrl, TextEditingController rateCtrl) {
+    final name = nameCtrl.text.trim().isEmpty ? "موظف" : nameCtrl.text.trim();
+    final rate = double.tryParse(rateCtrl.text) ?? 15000.0;
+    appCtrl.employeeName.value = name;
+    appCtrl.dollarRate.value = rate;
+    Get.back();
   }
 
   Future<void> _exportBackup(String storeId) async {
@@ -2328,11 +2121,7 @@ class _SettingsPageState extends State<SettingsPage> {
             .collection('stores').doc(storeId).collection('groups').doc(g.id).collection('products')
             .where('pending_delete', isEqualTo: false)
             .get();
-        groupsData.add({
-          'id': g.id,
-          'name': g['name'],
-          'products': products.docs.map((p) => p.data()).toList()
-        });
+        groupsData.add({'id': g.id, 'name': g['name'], 'products': products.docs.map((p) => p.data()).toList()});
       }
       backup['groups'] = groupsData;
       final invoices = await FirebaseFirestore.instance
@@ -2341,15 +2130,11 @@ class _SettingsPageState extends State<SettingsPage> {
           .get();
       backup['invoices'] = invoices.docs.map((i) => i.data()).toList();
       final json = jsonEncode(backup);
-      final dir = await getApplicationDocumentsDirectory();
-      final fileName = 'tarweeqa_backup_${DateTime.now().millisecondsSinceEpoch}.json';
-      final file = File('${dir.path}/$fileName');
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/tarweeqa_backup_${DateTime.now().millisecondsSinceEpoch}.json');
       await file.writeAsString(json);
       await Share.shareXFiles([XFile(file.path)], text: 'نسخة احتياطية - ترويقة ERP');
-      Get.snackbar('نجاح', 'تم تصدير النسخة الاحتياطية بنجاح',
-          backgroundColor: Colors.green, colorText: Colors.white);
-    } catch (e, stack) {
-      await GlobalErrorHandler.recordError(e, stack);
+    } catch (e) {
       Get.snackbar('خطأ', 'فشل التصدير: $e',
           backgroundColor: Colors.red, colorText: Colors.white);
     }
@@ -2360,6 +2145,10 @@ class _SettingsPageState extends State<SettingsPage> {
     child: Text(t, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: kPrimary)),
   );
 }
+
+// ============================================================================
+// PART 12: PRODUCTS PAGE
+// ============================================================================
 
 class ProductsPage extends StatefulWidget {
   final String storeId;
@@ -2378,7 +2167,7 @@ class ProductsPage extends StatefulWidget {
 }
 
 class _ProductsPageState extends State<ProductsPage> {
-  final _pageSize = 50;
+  final _pageSize = 20;
   DocumentSnapshot? _lastDocument;
   final List<QueryDocumentSnapshot> _products = [];
   bool _hasMore = true;
@@ -2392,7 +2181,7 @@ class _ProductsPageState extends State<ProductsPage> {
     super.initState();
     _loadInitialProducts();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
         _loadMoreProducts();
       }
     });
@@ -2454,118 +2243,112 @@ class _ProductsPageState extends State<ProductsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return TarweeqaBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
           ),
-          title: Text(widget.groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
-          actions: [
-            IconButton(icon: const Icon(Icons.add), onPressed: () => _productDialog(context)),
-          ],
         ),
-        body: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: TextField(
-                controller: searchController,
-                decoration: InputDecoration(
-                  hintText: "بحث في المنتجات...",
-                  prefixIcon: const Icon(Icons.search),
-                  filled: true,
-                  fillColor: Colors.white.withOpacity(0.9),
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                ),
-                onChanged: (_) => _loadInitialProducts(),
+        title: Text(widget.groupName, style: const TextStyle(fontWeight: FontWeight.bold)),
+        actions: [
+          IconButton(icon: const Icon(Icons.add), onPressed: () => _productDialog(context)),
+        ],
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: TextField(
+              controller: searchController,
+              decoration: InputDecoration(
+                hintText: "بحث في المنتجات...",
+                prefixIcon: const Icon(Icons.search),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
               ),
+              onChanged: (_) => _loadInitialProducts(),
             ),
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                addAutomaticKeepAlives: false,
-                itemCount: _products.length + (_hasMore ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == _products.length) {
-                    return const Center(child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: CircularProgressIndicator(),
-                    ));
-                  }
-                  final p = _products[index];
-                  final data = p.data() as Map<String, dynamic>;
-                  final qty = (data['qty'] ?? 0).toDouble();
-                  final unit = data['unit'] ?? "عدد";
-                  final priceUSD = (data['priceUSD'] ?? 0.0).toDouble();
-                  final priceLiraOld = priceUSD * appCtrl.dollarRate.value;
-                  final priceLiraNew = priceLiraOld / 100;
-                  final isLow = qty <= 3;
-                  final updatedAt = data['updatedAt'] as Timestamp?;
+          ),
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              itemCount: _products.length + (_hasMore ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index == _products.length) {
+                  return const Center(child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: CircularProgressIndicator(),
+                  ));
+                }
+                final p = _products[index];
+                final data = p.data() as Map<String, dynamic>;
+                final qty = (data['qty'] ?? 0).toDouble();
+                final unit = data['unit'] ?? "عدد";
+                final priceUSD = (data['priceUSD'] ?? 0.0).toDouble();
+                final priceLiraOld = priceUSD * appCtrl.dollarRate.value;
+                final priceLiraNew = priceLiraOld / 100;
+                final isLow = qty <= 3;
+                final updatedAt = data['updatedAt'] as Timestamp?;
 
-                  return Card(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    color: isLow ? Colors.red[50] : null,
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(data['name'] ?? "",
-                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                              ),
-                              if (isLow) const Icon(Icons.warning_amber, color: Colors.red, size: 18),
-                              if (appCtrl.isAdmin.value) ...[
-                                IconButton(
-                                  icon: const Icon(Icons.edit, color: kPrimaryLight, size: 20),
-                                  onPressed: () => _productDialog(context, existing: p),
-                                ),
-                                IconButton(
-                                  icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
-                                  onPressed: () => _deleteProduct(p),
-                                ),
-                              ],
-                            ],
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  color: isLow ? Colors.red[50] : null,
+                  child: Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(data['name'] ?? "",
+                                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                            ),
+                            if (isLow) const Icon(Icons.warning_amber, color: Colors.red, size: 18),
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: kPrimaryLight, size: 20),
+                              onPressed: () => _productDialog(context, existing: p),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                              onPressed: () => _deleteProduct(p),
+                            ),
+                          ],
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isLow ? Colors.red[100] : const Color(0xFFE3F2FD),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: isLow ? Colors.red[100] : const Color(0xFFE3F2FD),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              "الكمية: ${qty.toStringAsFixed(qty % 1 == 0 ? 0 : 2)} $unit${isLow ? " نفاد قريب" : ""}",
-                              style: TextStyle(color: isLow ? Colors.red : kPrimary, fontWeight: FontWeight.bold, fontSize: 12),
-                            ),
+                          child: Text(
+                            "الكمية: ${qty.toStringAsFixed(qty % 1 == 0 ? 0 : 2)} $unit${isLow ? " ⚠️ نفاد قريب" : ""}",
+                            style: TextStyle(color: isLow ? Colors.red : kPrimary, fontWeight: FontWeight.bold, fontSize: 12),
                           ),
-                          const SizedBox(height: 6),
-                          Text("${NumberFormat("#,##0.##").format(priceUSD)} \$", style: const TextStyle(fontSize: 14)),
-                          Text("ل.س قديمة: ${NumberFormat("#,##0").format(priceLiraOld)}", style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                          Text("ل.س جديدة: ${NumberFormat("#,##0.##").format(priceLiraNew)}", style: const TextStyle(fontSize: 13, color: Colors.grey)),
-                          if (updatedAt != null)
-                            Text(
-                              "آخر تحديث: ${DateFormat('yyyy/MM/dd HH:mm').format(updatedAt.toDate())}",
-                              style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
-                            ),
-                        ],
-                      ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text("💵 ${NumberFormat("#,##0.##").format(priceUSD)} \$", style: const TextStyle(fontSize: 14)),
+                        Text("ل.س قديمة: ${NumberFormat("#,##0").format(priceLiraOld)}", style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                        Text("ل.س جديدة: ${NumberFormat("#,##0.##").format(priceLiraNew)}", style: const TextStyle(fontSize: 13, color: Colors.grey)),
+                        if (updatedAt != null)
+                          Text(
+                            "آخر تحديث: ${DateFormat('yyyy/MM/dd HH:mm').format(updatedAt.toDate())}",
+                            style: const TextStyle(fontSize: 11, color: Colors.blueGrey),
+                          ),
+                      ],
                     ),
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -2652,12 +2435,12 @@ class _ProductsPageState extends State<ProductsPage> {
                     await appCtrl.database.addProduct(widget.storeId, widget.groupId, d);
                     Get.snackbar('نجاح', 'تم إضافة المنتج بنجاح',
                         backgroundColor: Colors.green, colorText: Colors.white);
-                    HapticFeedback.lightImpact();
+                    Vibration.vibrate(duration: 100);
                   } else {
                     await appCtrl.database.updateProduct(widget.storeId, widget.groupId, existing.id, d);
                     Get.snackbar('نجاح', 'تم تعديل المنتج بنجاح',
                         backgroundColor: Colors.green, colorText: Colors.white);
-                    HapticFeedback.lightImpact();
+                    Vibration.vibrate(duration: 100);
                   }
                   Get.back();
                   _loadInitialProducts();
@@ -2696,6 +2479,10 @@ class _ProductsPageState extends State<ProductsPage> {
     );
   }
 }
+
+// ============================================================================
+// PART 13: NEW INVOICE PAGE
+// ============================================================================
 
 class NewInvoicePage extends StatefulWidget {
   final String storeId;
@@ -2891,164 +2678,165 @@ class _NewInvoicePageState extends State<NewInvoicePage> {
 
   @override
   Widget build(BuildContext context) {
-    return TarweeqaBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
           ),
-          title: const Text("فاتورة جديدة"),
         ),
-        body: Column(
-          children: [
-            Expanded(
-              child: cart.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.blue[200]),
-                          const SizedBox(height: 12),
-                          const Text("لم تتم إضافة منتجات بعد", style: TextStyle(color: Colors.grey)),
-                        ],
-                      ),
-                    )
-                  : ListView.builder(
-                      padding: const EdgeInsets.all(12),
-                      itemCount: cart.length,
-                      itemBuilder: (c, i) {
-                        final item = cart[i];
-                        return Card(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          child: Padding(
-                            padding: const EdgeInsets.all(10),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                                      GestureDetector(
-                                        onTap: () => _editQtyDialog(item),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: kPrimaryLight.withOpacity(0.1),
-                                            borderRadius: BorderRadius.circular(8),
-                                          ),
-                                          child: Text(
-                                            item.qtyType == "سعر_مباشر"
-                                                ? "سعر: ${NumberFormat("#,##0.##").format(item.totalUSD)} \$"
-                                                : "${item.qty.toStringAsFixed(item.qty % 1 == 0 ? 0 : 2)} ${item.qtyType}",
-                                            style: const TextStyle(fontSize: 12, color: kPrimaryLight),
-                                          ),
+        title: const Text("فاتورة جديدة"),
+      ),
+      body: Column(
+        children: [
+          Expanded(
+            child: cart.isEmpty
+                ? Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.shopping_cart_outlined, size: 64, color: Colors.blue[200]),
+                        const SizedBox(height: 12),
+                        const Text("لم تتم إضافة منتجات بعد", style: TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(12),
+                    itemCount: cart.length,
+                    itemBuilder: (c, i) {
+                      final item = cart[i];
+                      return Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(item.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    GestureDetector(
+                                      onTap: () => _editQtyDialog(item),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: kPrimaryLight.withOpacity(0.1),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Text(
+                                          item.qtyType == "سعر_مباشر"
+                                              ? "سعر: ${NumberFormat("#,##0.##").format(item.totalUSD)} \$  ✏️"
+                                              : "${item.qty.toStringAsFixed(item.qty % 1 == 0 ? 0 : 2)} ${item.qtyType}  ✏️",
+                                          style: const TextStyle(fontSize: 12, color: kPrimaryLight),
                                         ),
                                       ),
-                                    ],
-                                  ),
+                                    ),
+                                  ],
                                 ),
-                                if (item.qtyType != "سعر_مباشر") ...[
-                                  IconButton(
-                                    icon: const Icon(Icons.remove_circle_outline),
-                                    onPressed: () => setState(() {
-                                      item.qty -= 1;
-                                      if (item.qty <= 0) cart.removeAt(i);
-                                    }),
-                                  ),
-                                  Text(item.qty.toStringAsFixed(item.qty % 1 == 0 ? 0 : 2)),
-                                  IconButton(
-                                    icon: const Icon(Icons.add_circle_outline),
-                                    onPressed: () => setState(() => item.qty += 1),
-                                  ),
-                                ],
-                                Text(
-                                  "${NumberFormat("#,##0.##").format(item.totalUSD)} \$",
-                                  style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimary),
-                                ),
+                              ),
+                              if (item.qtyType != "سعر_مباشر") ...[
                                 IconButton(
-                                  icon: const Icon(Icons.close, color: Colors.red, size: 18),
-                                  onPressed: () => setState(() => cart.removeAt(i)),
+                                  icon: const Icon(Icons.remove_circle_outline),
+                                  onPressed: () => setState(() {
+                                    item.qty -= 1;
+                                    if (item.qty <= 0) cart.removeAt(i);
+                                  }),
+                                ),
+                                Text(item.qty.toStringAsFixed(item.qty % 1 == 0 ? 0 : 2)),
+                                IconButton(
+                                  icon: const Icon(Icons.add_circle_outline),
+                                  onPressed: () => setState(() => item.qty += 1),
                                 ),
                               ],
-                            ),
+                              Text(
+                                "${NumberFormat("#,##0.##").format(item.totalUSD)} \$",
+                                style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimary),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, color: Colors.red, size: 18),
+                                onPressed: () => setState(() => cart.removeAt(i)),
+                              ),
+                            ],
                           ),
-                        );
-                      },
+                        ),
+                      );
+                    },
+                  ),
+          ),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, -2))],
+            ),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("الإجمالي:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Text("${NumberFormat("#,##0.##").format(totalUSD)} \$",
+                            style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimary, fontSize: 15)),
+                        Text("ل.س ق: ${NumberFormat("#,##0").format(totalLiraOld)}",
+                            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                        Text("ل.س ج: ${NumberFormat("#,##0.##").format(totalLiraNew)}",
+                            style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
                     ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _pickProducts,
+                        icon: const Icon(Icons.add_shopping_cart),
+                        label: const Text("إضافة منتج"),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          if (cart.isEmpty) {
+                            Get.snackbar('تنبيه', 'أضف منتجات أولاً',
+                                backgroundColor: Colors.orange, colorText: Colors.white);
+                            return;
+                          }
+                          Get.to(() => PaymentPage(
+                            storeId: widget.storeId,
+                            cart: cart,
+                            totalUSD: totalUSD,
+                          ));
+                        },
+                        icon: const Icon(Icons.payments),
+                        label: const Text("الدفع"),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Theme.of(context).cardColor,
-                boxShadow: [BoxShadow(color: Colors.grey.withOpacity(0.2), blurRadius: 8, offset: const Offset(0, -2))],
-              ),
-              child: Column(
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text("الإجمالي:", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text("${NumberFormat("#,##0.##").format(totalUSD)} \$",
-                              style: const TextStyle(fontWeight: FontWeight.bold, color: kPrimary, fontSize: 15)),
-                          Text("ل.س ق: ${NumberFormat("#,##0").format(totalLiraOld)}",
-                              style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                          Text("ل.س ج: ${NumberFormat("#,##0.##").format(totalLiraNew)}",
-                              style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: _pickProducts,
-                          icon: const Icon(Icons.add_shopping_cart),
-                          label: const Text("إضافة منتج"),
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            if (cart.isEmpty) {
-                              Get.snackbar('تنبيه', 'أضف منتجات أولاً',
-                                  backgroundColor: Colors.orange, colorText: Colors.white);
-                              return;
-                            }
-                            Get.to(() => PaymentPage(
-                              storeId: widget.storeId,
-                              cart: cart,
-                              totalUSD: totalUSD,
-                            ));
-                          },
-                          icon: const Icon(Icons.payments),
-                          label: const Text("الدفع"),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
+
+// ============================================================================
+// PART 14: PAYMENT PAGE
+// ============================================================================
 
 class PaymentPage extends StatelessWidget {
   final String storeId;
@@ -3069,144 +2857,145 @@ class PaymentPage extends StatelessWidget {
     final customerCtrl = TextEditingController();
     final paidCurrency = "دولار".obs;
 
-    return TarweeqaBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
           ),
-          title: const Text("الدفع"),
         ),
-        body: Obx(() {
-          final paidUSD = Utils.toUSD(
-            double.tryParse(paidCtrl.text) ?? 0,
-            paidCurrency.value,
-            appCtrl.dollarRate.value,
-          );
-          final remaining = (totalUSD - paidUSD).clamp(0.0, double.infinity);
-          final isDebt = remaining > kTolerance;
+        title: const Text("الدفع"),
+      ),
+      body: Obx(() {
+        final paidUSD = Utils.toUSD(
+          double.tryParse(paidCtrl.text) ?? 0,
+          paidCurrency.value,
+          appCtrl.dollarRate.value,
+        );
+        final remaining = (totalUSD - paidUSD).clamp(0.0, double.infinity);
+        final isDebt = remaining > kTolerance;
 
-          return Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("إجمالي الفاتورة"),
-                            Text("${NumberFormat("#,##0.##").format(totalUSD)} \$",
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("ل.س قديمة:"),
-                            Text(NumberFormat("#,##0").format(totalUSD * appCtrl.dollarRate.value)),
-                          ],
-                        ),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            const Text("ل.س جديدة:"),
-                            Text(NumberFormat("#,##0.##").format(totalUSD * appCtrl.dollarRate.value / 100)),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextField(
-                        controller: paidCtrl,
-                        keyboardType: TextInputType.number,
-                        onChanged: (_) => {},
-                        decoration: const InputDecoration(labelText: "المبلغ المدفوع", border: OutlineInputBorder()),
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("إجمالي الفاتورة"),
+                          Text("${NumberFormat("#,##0.##").format(totalUSD)} \$",
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                        ],
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    DropdownButton<String>(
-                      value: paidCurrency.value,
-                      items: ["دولار", "ل.س قديمة", "ل.س جديدة"]
-                          .map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
-                      onChanged: (v) => paidCurrency.value = v ?? "دولار",
-                    ),
-                  ],
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("ل.س قديمة:"),
+                          Text(NumberFormat("#,##0").format(totalUSD * appCtrl.dollarRate.value)),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text("ل.س جديدة:"),
+                          Text(NumberFormat("#,##0.##").format(totalUSD * appCtrl.dollarRate.value / 100)),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 8),
-                if (isDebt) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.orange[50],
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.orange[300]!),
-                    ),
-                    child: Text(
-                      "متبقي: ${NumberFormat("#,##0.##").format(remaining)} \$ - ستسجل في الدين",
-                      style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: paidCtrl,
+                      keyboardType: TextInputType.number,
+                      onChanged: (_) => {},
+                      decoration: const InputDecoration(labelText: "المبلغ المدفوع", border: OutlineInputBorder()),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: customerCtrl,
-                    onChanged: (_) => {},
-                    decoration: const InputDecoration(labelText: "اسم الزبون *", border: OutlineInputBorder()),
+                  const SizedBox(width: 8),
+                  DropdownButton<String>(
+                    value: paidCurrency.value,
+                    items: ["دولار", "ل.س قديمة", "ل.س جديدة"]
+                        .map((c) => DropdownMenuItem(value: c, child: Text(c))).toList(),
+                    onChanged: (v) => paidCurrency.value = v ?? "دولار",
                   ),
                 ],
-                const Spacer(),
-                ElevatedButton(
-                  onPressed: appCtrl.isProcessing.value ? null : () {
-                    if (isDebt && customerCtrl.text.trim().isEmpty) {
-                      Get.snackbar('خطأ', 'يجب إدخال اسم الزبون عند وجود متبقي',
-                          backgroundColor: Colors.red, colorText: Colors.white);
-                      return;
-                    }
-                    appCtrl.saveInvoice(
-                      storeId,
-                      cart,
-                      totalUSD,
-                      paidUSD,
-                      remaining,
-                      isDebt,
-                      isDebt ? customerCtrl.text.trim() : null,
-                      appCtrl.employeeName.value ?? 'موظف',
-                      appCtrl.dollarRate.value,
-                    ).then((_) {
-                      if (!isDebt) {
-                        Get.offAll(() => const HomePage());
-                      }
-                    });
-                  },
-                  style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
-                  child: appCtrl.isProcessing.value
-                      ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Text("حفظ الفاتورة", style: TextStyle(fontSize: 16)),
+              ),
+              const SizedBox(height: 8),
+              if (isDebt) ...[
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.orange[50],
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.orange[300]!),
+                  ),
+                  child: Text(
+                    "متبقي: ${NumberFormat("#,##0.##").format(remaining)} \$ — ستُسجَّل في الدين",
+                    style: const TextStyle(color: Colors.orange, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: customerCtrl,
+                  onChanged: (_) => {},
+                  decoration: const InputDecoration(labelText: "اسم الزبون *", border: OutlineInputBorder()),
                 ),
               ],
-            ),
-          );
-        }),
-      ),
+              const Spacer(),
+              ElevatedButton(
+                onPressed: appCtrl.isProcessing.value ? null : () {
+                  if (isDebt && customerCtrl.text.trim().isEmpty) {
+                    Get.snackbar('خطأ', 'يجب إدخال اسم الزبون عند وجود متبقي',
+                        backgroundColor: Colors.red, colorText: Colors.white);
+                    return;
+                  }
+                  appCtrl.saveInvoice(
+                    storeId,
+                    cart,
+                    totalUSD,
+                    paidUSD,
+                    remaining,
+                    isDebt,
+                    isDebt ? customerCtrl.text.trim() : null,
+                    appCtrl.employeeName.value ?? 'موظف',
+                    appCtrl.dollarRate.value,
+                  ).then((_) {
+                    if (!isDebt) {
+                      Get.offAll(() => const HomePage());
+                    }
+                  });
+                },
+                style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                child: appCtrl.isProcessing.value
+                    ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                    : const Text("حفظ الفاتورة", style: TextStyle(fontSize: 16)),
+              ),
+            ],
+          ),
+        );
+      }),
     );
   }
 }
+
+// ============================================================================
+// PART 15: INVOICES PAGE
+// ============================================================================
 
 class InvoicesPage extends StatefulWidget {
   final String storeId;
@@ -3218,7 +3007,7 @@ class InvoicesPage extends StatefulWidget {
 }
 
 class _InvoicesPageState extends State<InvoicesPage> {
-  final _pageSize = 50;
+  final _pageSize = 20;
   DocumentSnapshot? _lastDocument;
   final List<Invoice> _invoices = [];
   bool _hasMore = true;
@@ -3231,7 +3020,7 @@ class _InvoicesPageState extends State<InvoicesPage> {
     super.initState();
     _loadInitialInvoices();
     _scrollController.addListener(() {
-      if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
+      if (_scrollController.position.pixels == _scrollController.position.maxScrollExtent) {
         _loadMoreInvoices();
       }
     });
@@ -3352,7 +3141,7 @@ class _InvoicesPageState extends State<InvoicesPage> {
                     backgroundColor: Colors.green,
                     colorText: Colors.white,
                   );
-                  HapticFeedback.mediumImpact();
+                  Vibration.vibrate(duration: 200);
                   _loadInitialInvoices();
                 } catch (e) {
                   Get.snackbar('خطأ', 'فشل التسديد: $e',
@@ -3371,20 +3160,20 @@ class _InvoicesPageState extends State<InvoicesPage> {
 
   void _shareInvoice(Invoice invoice) {
     final sb = StringBuffer();
-    sb.writeln("فاتورة ترويقة");
-    sb.writeln("----------------");
-    sb.writeln("${invoice.dateStr}");
-    sb.writeln("البائع: ${invoice.employeeName}");
-    if (invoice.customerName != null) sb.writeln("الزبون: ${invoice.customerName}");
-    sb.writeln("----------------");
+    sb.writeln("🧾 فاتورة ترويقة");
+    sb.writeln("━━━━━━━━━━━━━━━━");
+    sb.writeln("📅 ${invoice.dateStr}");
+    sb.writeln("👤 البائع: ${invoice.employeeName}");
+    if (invoice.customerName != null) sb.writeln("🛒 الزبون: ${invoice.customerName}");
+    sb.writeln("━━━━━━━━━━━━━━━━");
     for (final item in invoice.items) {
-      sb.writeln("${item.name} - ${item.qty} ${item.unit} = ${NumberFormat("#,##0.##").format(item.totalUSD)} \$");
+      sb.writeln("• ${item.name} — ${item.qty} ${item.unit} = ${NumberFormat("#,##0.##").format(item.totalUSD)} \$");
     }
-    sb.writeln("----------------");
-    sb.writeln("الإجمالي: ${NumberFormat("#,##0.##").format(invoice.totalUSD)} \$");
-    sb.writeln("المدفوع: ${NumberFormat("#,##0.##").format(invoice.paidUSD)} \$");
+    sb.writeln("━━━━━━━━━━━━━━━━");
+    sb.writeln("💵 الإجمالي: ${NumberFormat("#,##0.##").format(invoice.totalUSD)} \$");
+    sb.writeln("✅ المدفوع: ${NumberFormat("#,##0.##").format(invoice.paidUSD)} \$");
     if (invoice.remainingUSD > 0) {
-      sb.writeln("المتبقي: ${NumberFormat("#,##0.##").format(invoice.remainingUSD)} \$");
+      sb.writeln("⚠️ المتبقي: ${NumberFormat("#,##0.##").format(invoice.remainingUSD)} \$");
     }
     Share.share(sb.toString(), subject: "فاتورة ترويقة");
   }
@@ -3430,143 +3219,142 @@ class _InvoicesPageState extends State<InvoicesPage> {
 
   @override
   Widget build(BuildContext context) {
-    return TarweeqaBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
           ),
-          title: Text(widget.debtOnly ? "قسم الدين" : "الفواتير المدفوعة"),
         ),
-        body: Column(
-          children: [
-            if (widget.debtOnly)
-              StreamBuilder<QuerySnapshot>(
-                stream: FirebaseFirestore.instance
-                    .collection('stores').doc(widget.storeId).collection('invoices')
-                    .where('isPaid', isEqualTo: false)
-                    .where('pending_delete', isEqualTo: false)
-                    .snapshots(),
-                builder: (_, snap) {
-                  if (snap.hasError) {
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      color: Colors.red[100],
-                      child: const Text("خطأ في تحميل الديون", style: TextStyle(color: Colors.red)),
-                    );
-                  }
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return Container(
-                      padding: const EdgeInsets.all(12),
-                      child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-                    );
-                  }
-                  if (!snap.hasData) return const SizedBox();
-                  final total = snap.data!.docs.fold<double>(
-                      0, (s, d) => s + ((d.data() as Map<String, dynamic>)['remainingUSD'] ?? 0));
+        title: Text(widget.debtOnly ? "قسم الدين" : "الفواتير المدفوعة"),
+      ),
+      body: Column(
+        children: [
+          if (widget.debtOnly)
+            StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance
+                  .collection('stores').doc(widget.storeId).collection('invoices')
+                  .where('isPaid', isEqualTo: false)
+                  .where('pending_delete', isEqualTo: false)
+                  .snapshots(),
+              builder: (_, snap) {
+                if (snap.hasError) {
                   return Container(
                     padding: const EdgeInsets.all(12),
-                    color: Colors.red[50],
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(Icons.warning_amber, color: Colors.red, size: 18),
-                        const SizedBox(width: 8),
-                        Text("إجمالي الديون: ${NumberFormat("#,##0.##").format(total)} \$",
-                            style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
+                    color: Colors.red[100],
+                    child: const Text("خطأ في تحميل الديون", style: TextStyle(color: Colors.red)),
                   );
-                },
-              ),
-            Expanded(
-              child: ListView.builder(
-                controller: _scrollController,
-                addAutomaticKeepAlives: false,
-                itemCount: _invoices.length + (_hasMore ? 1 : 0),
-                itemBuilder: (context, index) {
-                  if (index == _invoices.length) {
-                    return const Center(child: Padding(
-                      padding: EdgeInsets.all(16),
-                      child: CircularProgressIndicator(),
-                    ));
-                  }
-                  final invoice = _invoices[index];
-                  return Card(
-                    color: widget.debtOnly ? Colors.red[50] : null,
-                    margin: const EdgeInsets.only(bottom: 10),
-                    child: ExpansionTile(
-                      title: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "${NumberFormat("#,##0.##").format(invoice.totalUSD)} \$",
-                            style: TextStyle(fontWeight: FontWeight.bold,
-                                color: widget.debtOnly ? Colors.red[800] : kPrimary),
-                          ),
-                          if (widget.debtOnly)
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
-                              icon: const Icon(Icons.payment, size: 14),
-                              label: const Text("تسديد", style: TextStyle(fontSize: 12)),
-                              onPressed: () => _payDebtDialog(invoice),
-                            ),
-                        ],
-                      ),
-                      subtitle: Text(
-                        "البائع: ${invoice.employeeName} - ${invoice.dateStr}"
-                        "${widget.debtOnly ? '\nالزبون: ${invoice.customerName ?? ''} - متبقي: ${NumberFormat("#,##0.##").format(invoice.remainingUSD)} \$' : ''}",
-                        style: TextStyle(color: widget.debtOnly ? Colors.red[700] : Colors.grey[600], fontSize: 12),
-                      ),
-                      children: [
-                        ...invoice.items.map((item) => ListTile(
-                          dense: true,
-                          title: Text(item.name),
-                          trailing: Text(
-                            "${item.qty} ${item.unit} = ${NumberFormat("#,##0.##").format(item.totalUSD)}\$",
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        )),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                          child: Row(
-                            children: [
-                              TextButton.icon(
-                                icon: const Icon(Icons.share, size: 16),
-                                label: const Text("مشاركة", style: TextStyle(fontSize: 12)),
-                                onPressed: () => _shareInvoice(invoice),
-                              ),
-                              const Spacer(),
-                              if (appCtrl.isAdmin.value)
-                                TextButton.icon(
-                                  icon: const Icon(Icons.delete, color: Colors.red, size: 16),
-                                  label: const Text("حذف", style: TextStyle(color: Colors.red, fontSize: 12)),
-                                  onPressed: () => _deleteInvoice(invoice),
-                                ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
+                }
+                if (snap.connectionState == ConnectionState.waiting) {
+                  return Container(
+                    padding: const EdgeInsets.all(12),
+                    child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
                   );
-                },
-              ),
+                }
+                if (!snap.hasData) return const SizedBox();
+                final total = snap.data!.docs.fold<double>(
+                    0, (s, d) => s + ((d.data() as Map<String, dynamic>)['remainingUSD'] ?? 0));
+                return Container(
+                  padding: const EdgeInsets.all(12),
+                  color: Colors.red[50],
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.warning_amber, color: Colors.red, size: 18),
+                      const SizedBox(width: 8),
+                      Text("إجمالي الديون: ${NumberFormat("#,##0.##").format(total)} \$",
+                          style: const TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                );
+              },
             ),
-          ],
-        ),
+          Expanded(
+            child: ListView.builder(
+              controller: _scrollController,
+              itemCount: _invoices.length + (_hasMore ? 1 : 0),
+              itemBuilder: (context, index) {
+                if (index == _invoices.length) {
+                  return const Center(child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: CircularProgressIndicator(),
+                  ));
+                }
+                final invoice = _invoices[index];
+                return Card(
+                  color: widget.debtOnly ? Colors.red[50] : null,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  child: ExpansionTile(
+                    title: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          "${NumberFormat("#,##0.##").format(invoice.totalUSD)} \$",
+                          style: TextStyle(fontWeight: FontWeight.bold,
+                              color: widget.debtOnly ? Colors.red[800] : kPrimary),
+                        ),
+                        if (widget.debtOnly)
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.green,
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4)),
+                            icon: const Icon(Icons.payment, size: 14),
+                            label: const Text("تسديد", style: TextStyle(fontSize: 12)),
+                            onPressed: () => _payDebtDialog(invoice),
+                          ),
+                      ],
+                    ),
+                    subtitle: Text(
+                      "البائع: ${invoice.employeeName} • ${invoice.dateStr}"
+                      "${widget.debtOnly ? '\nالزبون: ${invoice.customerName ?? ''} — متبقي: ${NumberFormat("#,##0.##").format(invoice.remainingUSD)} \$' : ''}",
+                      style: TextStyle(color: widget.debtOnly ? Colors.red[700] : Colors.grey[600], fontSize: 12),
+                    ),
+                    children: [
+                      ...invoice.items.map((item) => ListTile(
+                        dense: true,
+                        title: Text(item.name),
+                        trailing: Text(
+                          "${item.qty} ${item.unit} = ${NumberFormat("#,##0.##").format(item.totalUSD)}\$",
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                      )),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        child: Row(
+                          children: [
+                            TextButton.icon(
+                              icon: const Icon(Icons.share, size: 16),
+                              label: const Text("مشاركة", style: TextStyle(fontSize: 12)),
+                              onPressed: () => _shareInvoice(invoice),
+                            ),
+                            const Spacer(),
+                            TextButton.icon(
+                              icon: const Icon(Icons.delete, color: Colors.red, size: 16),
+                              label: const Text("حذف", style: TextStyle(color: Colors.red, fontSize: 12)),
+                              onPressed: () => _deleteInvoice(invoice),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
 }
+
+// ============================================================================
+// PART 16: DAILY REPORT PAGE
+// ============================================================================
 
 class DailyReportPage extends StatelessWidget {
   final String storeId;
@@ -3576,54 +3364,68 @@ class DailyReportPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final appCtrl = Get.find<AppController>();
 
-    return TarweeqaBackground(
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          flexibleSpace: Container(
-            decoration: const BoxDecoration(
-              gradient: LinearGradient(
-                colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        flexibleSpace: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Color(0xFF0D47A1), Color(0xFF42A5F5)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
             ),
           ),
-          title: const Text("التقرير اليومي"),
         ),
-        body: FutureBuilder<DailyReport>(
-          future: appCtrl.invoice.getDailyReport(storeId, DateTime.now()),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(child: Text("خطأ: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: Text("لا توجد بيانات لهذا اليوم", style: TextStyle(color: Colors.grey)));
-            }
+        title: const Text("التقرير اليومي"),
+      ),
+      body: FutureBuilder<DailyReport>(
+        future: appCtrl.invoice.getDailyReport(storeId, DateTime.now()),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+          if (snapshot.hasError) {
+            return Center(child: Text("خطأ: ${snapshot.error}", style: const TextStyle(color: Colors.red)));
+          }
+          if (!snapshot.hasData) {
+            return const Center(child: Text("لا توجد بيانات لهذا اليوم", style: TextStyle(color: Colors.grey)));
+          }
 
-            final report = snapshot.data!;
-            return Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Column(
-                        children: [
-                          Text("تقرير يوم ${report.date}",
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                          const Divider(),
-                          _reportRow("عدد الفواتير", "${report.invoiceCount}"),
-                          _reportRow("عدد الديون", "${report.debtCount}"),
-                        ],
-                      ),
+          final report = snapshot.data!;
+          return Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        Text("تقرير يوم ${report.date}",
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        const Divider(),
+                        _reportRow("عدد الفواتير", "${report.invoiceCount}"),
+                        _reportRow("عدد الديون", "${report.debtCount}"),
+                      ],
                     ),
                   ),
+                ),
+                const SizedBox(height: 12),
+                Card(
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text("المبيعات النقدية (مدفوعة):", style: TextStyle(fontWeight: FontWeight.bold)),
+                        _reportRow("دولار", "${NumberFormat("#,##0.##").format(report.totalPaidUSD)} \$"),
+                        _reportRow("ل.س قديمة", "${NumberFormat("#,##0").format(report.totalPaidLiraOld)}"),
+                        _reportRow("ل.س جديدة", "${NumberFormat("#,##0.##").format(report.totalPaidLiraNew)}"),
+                      ],
+                    ),
+                  ),
+                ),
+                if (report.totalDebtUSD > 0) ...[
                   const SizedBox(height: 12),
                   Card(
                     child: Padding(
@@ -3631,57 +3433,40 @@ class DailyReportPage extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text("المبيعات النقدية (مدفوعة):", style: TextStyle(fontWeight: FontWeight.bold)),
-                          _reportRow("دولار", "${NumberFormat("#,##0.##").format(report.totalPaidUSD)} \$"),
-                          _reportRow("ل.س قديمة", "${NumberFormat("#,##0").format(report.totalPaidLiraOld)}"),
-                          _reportRow("ل.س جديدة", "${NumberFormat("#,##0.##").format(report.totalPaidLiraNew)}"),
+                          const Text("الديون المتبقية:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
+                          _reportRow("دولار", "${NumberFormat("#,##0.##").format(report.totalDebtUSD)} \$"),
+                          _reportRow("ل.س قديمة", "${NumberFormat("#,##0").format(report.totalDebtLiraOld)}"),
+                          _reportRow("ل.س جديدة", "${NumberFormat("#,##0.##").format(report.totalDebtLiraNew)}"),
                         ],
                       ),
                     ),
-                  ),
-                  if (report.totalDebtUSD > 0) ...[
-                    const SizedBox(height: 12),
-                    Card(
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text("الديون المتبقية:", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.red)),
-                            _reportRow("دولار", "${NumberFormat("#,##0.##").format(report.totalDebtUSD)} \$"),
-                            _reportRow("ل.س قديمة", "${NumberFormat("#,##0").format(report.totalDebtLiraOld)}"),
-                            _reportRow("ل.س جديدة", "${NumberFormat("#,##0.##").format(report.totalDebtLiraNew)}"),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  Card(
-                    color: Colors.green[50],
-                    child: Padding(
-                      padding: const EdgeInsets.all(16),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text("الإيراد الإجمالي:", style: TextStyle(fontWeight: FontWeight.bold)),
-                          Text("${NumberFormat("#,##0.##").format(report.totalRevenueUSD)} \$",
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
-                        ],
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    onPressed: () => _shareReport(report),
-                    icon: const Icon(Icons.share),
-                    label: const Text("مشاركة التقرير"),
                   ),
                 ],
-              ),
-            );
-          },
-        ),
+                const SizedBox(height: 12),
+                Card(
+                  color: Colors.green[50],
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text("الإيراد الإجمالي:", style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text("${NumberFormat("#,##0.##").format(report.totalRevenueUSD)} \$",
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.green)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: () => _shareReport(report),
+                  icon: const Icon(Icons.share),
+                  label: const Text("مشاركة التقرير"),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }
@@ -3701,27 +3486,27 @@ class DailyReportPage extends StatelessWidget {
 
   void _shareReport(DailyReport report) {
     final sb = StringBuffer();
-    sb.writeln("تقرير ترويقة اليومي");
-    sb.writeln("----------------");
-    sb.writeln("التاريخ: ${report.date}");
-    sb.writeln("سعر الدولار: ${report.dollarRate} ل.س");
-    sb.writeln("----------------");
-    sb.writeln("الفواتير: ${report.invoiceCount}");
-    sb.writeln("الديون: ${report.debtCount}");
-    sb.writeln("----------------");
-    sb.writeln("المبيعات النقدية:");
-    sb.writeln("دولار: ${NumberFormat("#,##0.##").format(report.totalPaidUSD)} \$");
-    sb.writeln("ل.س ق: ${NumberFormat("#,##0").format(report.totalPaidLiraOld)}");
-    sb.writeln("ل.س ج: ${NumberFormat("#,##0.##").format(report.totalPaidLiraNew)}");
+    sb.writeln("📊 تقرير ترويقة اليومي");
+    sb.writeln("━━━━━━━━━━━━━━━━");
+    sb.writeln("📅 التاريخ: ${report.date}");
+    sb.writeln("💰 سعر الدولار: ${report.dollarRate} ل.س");
+    sb.writeln("━━━━━━━━━━━━━━━━");
+    sb.writeln("📋 الفواتير: ${report.invoiceCount}");
+    sb.writeln("🛒 الديون: ${report.debtCount}");
+    sb.writeln("━━━━━━━━━━━━━━━━");
+    sb.writeln("💵 المبيعات النقدية:");
+    sb.writeln("  دولار: ${NumberFormat("#,##0.##").format(report.totalPaidUSD)} \$");
+    sb.writeln("  ل.س ق: ${NumberFormat("#,##0").format(report.totalPaidLiraOld)}");
+    sb.writeln("  ل.س ج: ${NumberFormat("#,##0.##").format(report.totalPaidLiraNew)}");
     if (report.totalDebtUSD > 0) {
-      sb.writeln("----------------");
-      sb.writeln("الديون المتبقية:");
-      sb.writeln("دولار: ${NumberFormat("#,##0.##").format(report.totalDebtUSD)} \$");
-      sb.writeln("ل.س ق: ${NumberFormat("#,##0").format(report.totalDebtLiraOld)}");
-      sb.writeln("ل.س ج: ${NumberFormat("#,##0.##").format(report.totalDebtLiraNew)}");
+      sb.writeln("━━━━━━━━━━━━━━━━");
+      sb.writeln("⚠️ الديون المتبقية:");
+      sb.writeln("  دولار: ${NumberFormat("#,##0.##").format(report.totalDebtUSD)} \$");
+      sb.writeln("  ل.س ق: ${NumberFormat("#,##0").format(report.totalDebtLiraOld)}");
+      sb.writeln("  ل.س ج: ${NumberFormat("#,##0.##").format(report.totalDebtLiraNew)}");
     }
-    sb.writeln("----------------");
-    sb.writeln("الإيراد الإجمالي: ${NumberFormat("#,##0.##").format(report.totalRevenueUSD)} \$");
+    sb.writeln("━━━━━━━━━━━━━━━━");
+    sb.writeln("📈 الإيراد الإجمالي: ${NumberFormat("#,##0.##").format(report.totalRevenueUSD)} \$");
     Share.share(sb.toString(), subject: "تقرير ترويقة اليومي");
   }
 }
