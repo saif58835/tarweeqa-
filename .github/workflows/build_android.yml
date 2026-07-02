@@ -35,29 +35,28 @@ jobs:
 
       - name: Fix minSdkVersion (permanent fix)
         run: |
-          GRADLE_KTS="android/app/build.gradle.kts"
-          GRADLE_GROOVY="android/app/build.gradle"
-
-          echo "===== ظ‚ط¨ظ„ ط§ظ„طھط¹ط¯ظٹظ„ ====="
-          cat "$GRADLE_KTS" 2>/dev/null || cat "$GRADLE_GROOVY" 2>/dev/null
-
-          if [ -f "$GRADLE_KTS" ]; then
-            perl -0pi -e 's/minSdk\s*=\s*flutter\.minSdkVersion(\.toInt\(\))?/minSdk = 23/g' "$GRADLE_KTS"
-          fi
-          if [ -f "$GRADLE_GROOVY" ]; then
-            perl -0pi -e 's/minSdkVersion\s+flutter\.minSdkVersion/minSdkVersion 23/g' "$GRADLE_GROOVY"
+          FILE=""
+          if [ -f "android/app/build.gradle.kts" ]; then
+            FILE="android/app/build.gradle.kts"
+          elif [ -f "android/app/build.gradle" ]; then
+            FILE="android/app/build.gradle"
           fi
 
-          echo "===== ط¨ط¹ط¯ ط§ظ„طھط¹ط¯ظٹظ„ ====="
-          cat "$GRADLE_KTS" 2>/dev/null || cat "$GRADLE_GROOVY" 2>/dev/null
+          echo "===== الملف المستخدم: $FILE ====="
+          cat "$FILE"
 
-          echo "===== ط§ظ„طھط­ظ‚ظ‚ ====="
-          if [ -f "$GRADLE_KTS" ] && grep -q "minSdk = 23" "$GRADLE_KTS"; then
-            echo "âœ… طھظ… ط§ظ„طھط¹ط¯ظٹظ„ ط¨ظ†ط¬ط§ط­"
-          elif [ -f "$GRADLE_GROOVY" ] && grep -q "minSdkVersion 23" "$GRADLE_GROOVY"; then
-            echo "âœ… طھظ… ط§ظ„طھط¹ط¯ظٹظ„ ط¨ظ†ط¬ط§ط­"
+          # يطابق minSdk = flutter.minSdkVersion بأي صيغة (مع أو بدون toInt، مسافات مختلفة)
+          perl -0pi -e 's/minSdk\s*=\s*flutter\.minSdkVersion(\.toInt\(\))?/minSdk = 23/g' "$FILE"
+          # يطابق الصيغة القديمة minSdkVersion flutter.minSdkVersion لو موجودة
+          perl -0pi -e 's/minSdkVersion\s+flutter\.minSdkVersion/minSdkVersion 23/g' "$FILE"
+
+          echo "===== بعد التعديل ====="
+          cat "$FILE"
+
+          if grep -qE "minSdk( )?= 23|minSdkVersion 23" "$FILE"; then
+            echo "✅ تم التعديل بنجاح"
           else
-            echo "â‌Œ ظپط´ظ„ ط§ظ„طھط¹ط¯ظٹظ„!"
+            echo "❌ فشل التعديل!"
             exit 1
           fi
 
