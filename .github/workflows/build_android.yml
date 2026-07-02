@@ -36,29 +36,22 @@ jobs:
       - name: Fix minSdkVersion
         run: |
           FILE=""
-          if [ -f "android/app/build.gradle.kts" ]; then
-            FILE="android/app/build.gradle.kts"
-          elif [ -f "android/app/build.gradle" ]; then
-            FILE="android/app/build.gradle"
-          fi
+          if [ -f "android/app/build.gradle.kts" ]; then FILE="android/app/build.gradle.kts"; fi
+          if [ -f "android/app/build.gradle" ]; then FILE="android/app/build.gradle"; fi
           perl -0pi -e 's/minSdk\s*=\s*flutter\.minSdkVersion(\.toInt\(\))?/minSdk = 23/g' "$FILE"
           perl -0pi -e 's/minSdkVersion\s+flutter\.minSdkVersion/minSdkVersion 23/g' "$FILE"
-          grep -E "minSdk( )?= 23|minSdkVersion 23" "$FILE" || (echo "❌ فشل تعديل minSdk" && exit 1)
-          echo "✅ minSdk تم تعديله"
+          grep -E "minSdk( )?= 23|minSdkVersion 23" "$FILE" || (echo "❌ فشل minSdk" && exit 1)
 
       - name: Fix Kotlin version
         run: |
-          TOPFILE="android/build.gradle"
+          SETTINGS="android/settings.gradle"
+          [ -f "$SETTINGS" ] || SETTINGS="android/settings.gradle.kts"
           echo "===== قبل ====="
-          cat "$TOPFILE"
-          perl -0pi -e "s/ext\.kotlin_version\s*=\s*'[^']*'/ext.kotlin_version = '1.9.22'/g" "$TOPFILE"
+          cat "$SETTINGS"
+          perl -0pi -e 's/(org\.jetbrains\.kotlin\.android"?\s+version\s+")[^"]+(")/${1}1.9.22${2}/g' "$SETTINGS"
           echo "===== بعد ====="
-          cat "$TOPFILE"
-          if grep -q "kotlin_version = '1.9.22'" "$TOPFILE"; then
-            echo "✅ Kotlin version تم تعديله"
-          else
-            echo "⚠️ لم يتم العثور على ext.kotlin_version، قد تكون البنية مختلفة"
-          fi
+          cat "$SETTINGS"
+          grep -q "kotlin.android\" version \"1.9.22\"" "$SETTINGS" && echo "✅ Kotlin تم تعديله" || echo "⚠️ راجع الصيغة"
 
       - name: Install dependencies
         run: flutter pub get
