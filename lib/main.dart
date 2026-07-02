@@ -14,21 +14,6 @@ import 'dart:math';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-
-  FlutterError.onError = (FlutterErrorDetails details) {
-    if (kDebugMode) {
-      FlutterError.dumpErrorToConsole(details);
-    } else {
-      print(details.exception);
-    }
-  };
-
-  await Firebase.initializeApp();
-  Get.put(AppController());
-  runApp(const MyApp());
-}
 const String kAppVersion = '2.0.0';
 const String kCurrency = 'ر.س';
 
