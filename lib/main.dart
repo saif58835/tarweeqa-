@@ -262,7 +262,7 @@ class InvoiceModel {
       storeId: map['storeId'] ?? '',
       customerName: map['customerName'] ?? '',
       customerPhone: map['customerPhone'],
-      items: (map['items'] as List<dynamic>? ?? []).map((item) => InvoiceItem.fromMap(item)).toList(),
+      items: (map['items'] as List<dynamic>? ?? []).map((item) => InvoiceItem.fromMap(item as Map<String, dynamic>)).toList(),
       subtotal: (map['subtotal'] ?? 0).toDouble(),
       discount: (map['discount'] ?? 0).toDouble(),
       total: (map['total'] ?? 0).toDouble(),
@@ -681,7 +681,7 @@ class DatabaseService {
           .orderBy('date', descending: true)
           .get();
       
-      return snapshot.docs.map((doc) => InvoiceModel.fromMap(doc.id, doc.data())).toList();
+      return snapshot.docs.map((doc) => InvoiceModel.fromMap(doc.id, doc.data() as Map<String, dynamic>)).toList();
     } catch (e) {
       throw DatabaseException('فشل جلب الفواتير: $e');
     }
@@ -907,7 +907,7 @@ class InvoiceRepository {
       }
       
       final snapshot = await query.get();
-      return snapshot.docs.map((doc) => InvoiceModel.fromMap(doc.id, doc.data())).toList();
+      return snapshot.docs.map((doc) => InvoiceModel.fromMap(doc.id, doc.data() as Map<String, dynamic>)).toList();
     } catch (e) {
       throw DatabaseException('فشل جلب الفواتير: $e');
     }
@@ -2909,9 +2909,18 @@ class _NewInvoicePageState extends State<NewInvoicePage> {
     );
     
     if (existingItem != null) {
+      // تم التعديل هنا: إنشاء كائن جديد بدلاً من تعديل الـ final
+      final newQuantity = existingItem.quantity + 1;
+      final newItem = InvoiceItem(
+        productId: existingItem.productId,
+        productName: existingItem.productName,
+        quantity: newQuantity,
+        unitPrice: existingItem.unitPrice,
+        totalPrice: existingItem.unitPrice * newQuantity,
+      );
+      final index = items.indexOf(existingItem);
       setState(() {
-        existingItem.quantity++;
-        existingItem.totalPrice = existingItem.unitPrice * existingItem.quantity;
+        items[index] = newItem;
       });
     } else {
       setState(() {
@@ -2933,9 +2942,17 @@ class _NewInvoicePageState extends State<NewInvoicePage> {
   }
 
   void _updateItemQuantity(int index, int quantity) {
+    // تم التعديل هنا: إنشاء كائن جديد بدلاً من تعديل الـ final
     setState(() {
-      items[index].quantity = quantity;
-      items[index].totalPrice = items[index].unitPrice * quantity;
+      final oldItem = items[index];
+      final newItem = InvoiceItem(
+        productId: oldItem.productId,
+        productName: oldItem.productName,
+        quantity: quantity,
+        unitPrice: oldItem.unitPrice,
+        totalPrice: oldItem.unitPrice * quantity,
+      );
+      items[index] = newItem;
     });
   }
 
