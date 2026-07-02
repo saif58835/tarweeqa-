@@ -3,27 +3,32 @@
 // ============================================================
 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart'; // <--- هذا هو السطر المهم الجديد
 import 'package:get/get.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'dart:async';
-// ======== إضافة لالتقاط الأخطاء وإظهارها ========
-FlutterError.onError = (FlutterErrorDetails details) {
-  if (kDebugMode) {
-    FlutterError.dumpErrorToConsole(details);
-  } else {
-    print(details.exception);
-  }
-};
-// ============================================
 import 'dart:math';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-// ---- الثوابت ----
-const String kAppName = 'متجر الموبايلات';
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  FlutterError.onError = (FlutterErrorDetails details) {
+    if (kDebugMode) {
+      FlutterError.dumpErrorToConsole(details);
+    } else {
+      print(details.exception);
+    }
+  };
+
+  await Firebase.initializeApp();
+  Get.put(AppController());
+  runApp(const MyApp());
+}
 const String kAppVersion = '2.0.0';
 const String kCurrency = 'ر.س';
 
