@@ -2,7 +2,9 @@ import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
+import 'package:flame/particles.dart';
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 import '../network/network_service.dart';
 import 'bullet_controller.dart';
@@ -17,14 +19,20 @@ class BattleGame extends FlameGame with TapDetector {
   late final PlayerController player;
   late final EnemyController enemy;
   late final PlayerController remotePlayer;
-  late final HudOverlay hud; 
+  
+  // واجهة المستخدم
+  late final HudOverlay hud;
+  // لتشغيل الأصوات
+  final AudioPlayer audioPlayer = AudioPlayer();
 
   final Random random = Random();
   final List<BulletController> bullets = [];
 
   int score = 0;
+  int kills = 0;
   bool gameOver = false;
   double _enemyShootTimer = 0;
+  double _playerFireCooldown = 0; // نظام التبريد (Cooldown)
 
   BattleGame({
     required this.networkService,
@@ -32,12 +40,20 @@ class BattleGame extends FlameGame with TapDetector {
   });
 
   @override
-  Color backgroundColor() => const Color(0xFF0F1020);
+  Color backgroundColor() => const Color(0xFF1A1A2E); // لون خلفية احتياطي
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
     camera.viewfinder.anchor = Anchor.topLeft;
+
+    // رسم خلفية متحركة (Parallax) - سيتم تحويلها لصورة لاحقاً
+    // مؤقتاً نستخدم مستطيلاً لطيفاً
+    add(RectangleComponent(
+      position: Vector2.zero(),
+      size: size,
+      paint: Paint()..color = const Color(0xFF16213E),
+    ));
 
     player = PlayerController(position: Vector2(100, size.y - 110));
     add(player);
@@ -50,13 +66,15 @@ class BattleGame extends FlameGame with TapDetector {
       add(remotePlayer);
     }
 
-    // **تعديل مهم: إنشاء الـ HUD وإضافته للعبة**
-    hud = HudOverlay();
+    hud = HudOverlay(gameRef: this); // تمرير اللعبة للـ Hud ليعرف النقاط
     add(hud);
   }
 
   void shoot(bool isEnemyBullet, Vector2 position, Vector2 direction) {
     if (gameOver) return;
+    
+    // نظام الطاقة: منع اللاعب من إطلاق النار بسرعة كبيرة
+    if (!isEnemyBullet && _playerFireCooldown > 0) return;
 
     final bullet = BulletController(
       position: position,
@@ -68,6 +86,9 @@ class BattleGame extends FlameGame with TapDetector {
     add(bullet);
 
     if (!isEnemyBullet) {
+      _playerFireCooldown = 0.25; // يمكنه إطلاق النار كل ربع ثانية
+      audioPlayer.play(AssetSource('sounds/shoot.wav')); // تشغيل صوت الرماية
+      
       networkService.sendShoot(
         x: bullet.position.x,
         y: bullet.position.y,
@@ -77,10 +98,21 @@ class BattleGame extends FlameGame with TapDetector {
     }
   }
 
+  // دالة خاصة لإطلاق القنبلة
+  void shootBomb() {
+    if (gameOver || _playerFireCooldown > 0) return;
+    
+    // هنا سنضع كود القنبلة لاحقاً (سنصنع BulletController خاص للقنبلة)
+    print("تم إطلاق القنبلة!");
+  }
+
   @override
   void update(double dt) {
     super.update(dt);
     if (gameOver) return;
+
+    // تحديث مؤقت التبريد (Cooldown)
+    if (_playerFireCooldown > 0) _playerFireCooldown -= dt;
 
     const speed = 220.0;
 
@@ -96,7 +128,7 @@ class BattleGame extends FlameGame with TapDetector {
       enemy.follow(player.position, dt, size);
       
       _enemyShootTimer += dt;
-      if (_enemyShootTimer >= 0.8) {
+      if (_enemyShootTimer >= 0.8 - (kills * 0.01)) { // روبوت أسرع كلما زاد القتل
         _enemyShootTimer = 0;
         Vector2 dir = (player.position - enemy.position).normalized();
         shoot(true, enemy.position.clone(), dir);
@@ -140,17 +172,21 @@ class BattleGame extends FlameGame with TapDetector {
   void checkCollisions() {
     for (final bullet in bullets.toList()) {
       if (isSinglePlayer) {
+        // إصابة العدو
         if (!bullet.isEnemy && bullet.position.distanceTo(enemy.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
           enemy.hit();
+          audioPlayer.play(AssetSource('sounds/hit.wav'));
 
           if (enemy.health <= 0) {
             score += 10;
+            kills++;
             enemy.reset(random, size);
           }
         }
         
+        // إصابة اللاعب
         if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
@@ -176,6 +212,7 @@ class BattleGame extends FlameGame with TapDetector {
 
   @override
   void onTapDown(TapDownInfo info) {
+    // إطلاق النار
     shoot(false, Vector2(player.position.x + 32, player.position.y), Vector2(1, 0));
   }
 }
