@@ -11,6 +11,7 @@ import 'enemy_controller.dart';
 import 'hud_overlay.dart';
 import 'player_controller.dart';
 import 'game_buttons.dart';
+import 'environment.dart';
 
 class BattleGame extends FlameGame with TapDetector {
   final NetworkService networkService;
@@ -19,8 +20,9 @@ class BattleGame extends FlameGame with TapDetector {
   late final PlayerController player;
   late final EnemyController enemy;
   late final PlayerController remotePlayer;
-  
   late final HudOverlay hud;
+  late final GameMap gameMap;
+
   final AudioPlayer audioPlayer = AudioPlayer();
 
   final Random random = Random();
@@ -32,7 +34,10 @@ class BattleGame extends FlameGame with TapDetector {
   double _enemyShootTimer = 0;
   double _playerFireCooldown = 0;
 
-  // متغير خاص بالقنبلة
+  int _currentWeaponIndex = 0;
+  final List<String> _weapons = ['Pistol', 'Sniper', 'SMG'];
+  double _currentZoom = 1.0;
+
   bool _bombCooldown = false;
   double _bombTimer = 0;
 
@@ -49,11 +54,8 @@ class BattleGame extends FlameGame with TapDetector {
     await super.onLoad();
     camera.viewfinder.anchor = Anchor.topLeft;
 
-    add(RectangleComponent(
-      position: Vector2.zero(),
-      size: size,
-      paint: Paint()..color = const Color(0xFF16213E),
-    ));
+    gameMap = GameMap(screenSize: size);
+    add(gameMap);
 
     player = PlayerController(position: Vector2(100, size.y - 110));
     add(player);
@@ -73,21 +75,47 @@ class BattleGame extends FlameGame with TapDetector {
     add(SwitchWeaponButton(gameRef: this));
   }
 
+  void switchWeapon() {
+    _currentWeaponIndex = (_currentWeaponIndex + 1) % _weapons.length;
+    print("السلاح الحالي: ${_weapons[_currentWeaponIndex]}");
+    
+    if (_weapons[_currentWeaponIndex] == 'Sniper') {
+      _currentZoom = 1.6;
+    } else {
+      _currentZoom = 1.0;
+    }
+    camera.zoom = _currentZoom;
+  }
+
   void shoot(bool isEnemyBullet, Vector2 position, Vector2 direction) {
     if (gameOver) return;
     if (!isEnemyBullet && _playerFireCooldown > 0) return;
+
+    String currentWeapon = isEnemyBullet ? 'Enemy' : _weapons[_currentWeaponIndex];
 
     final bullet = BulletController(
       position: position,
       direction: direction,
       isEnemy: isEnemyBullet,
+      weaponType: currentWeapon, // تمرير نوع السلاح للرصاصة
     );
 
     bullets.add(bullet);
     add(bullet);
 
     if (!isEnemyBullet) {
-      _playerFireCooldown = 0.25; 
+      // تحديد سرعة الرماية والصوت حسب السلاح
+      if (_weapons[_currentWeaponIndex] == 'SMG') {
+        _playerFireCooldown = 0.08;
+        audioPlayer.play(AssetSource('sounds/smg_shot.wav')); // صوت رشاش (خيالي حالياً)
+      } else if (_weapons[_currentWeaponIndex] == 'Sniper') {
+        _playerFireCooldown = 1.2;
+        audioPlayer.play(AssetSource('sounds/sniper_shot.wav')); // صوت قناصة (خيالي حالياً)
+      } else {
+        _playerFireCooldown = 0.25;
+        audioPlayer.play(AssetSource('sounds/pistol_shot.wav')); // صوت مسدس (خيالي حالياً)
+      }
+
       networkService.sendShoot(
         x: bullet.position.x,
         y: bullet.position.y,
@@ -97,43 +125,31 @@ class BattleGame extends FlameGame with TapDetector {
     }
   }
 
-  // ========== إضافة منطق القنبلة ==========
   void launchBomb() {
     if (gameOver || _bombCooldown) return;
-    
     _bombCooldown = true;
-    _bombTimer = 3.0; // تحتاج 3 ثواني لتنفجر
-    print("قنبلة مرمية! تنفجر بعد 3 ثواني.");
+    _bombTimer = 3.0;
+    audioPlayer.play(AssetSource('sounds/bomb_throw.wav')); // صوت رمي القنبلة
   }
 
   void _detonateBomb() {
-    // رسم الانفجار (دائرة برتقالية)
+    audioPlayer.play(AssetSource('sounds/bomb_explode.wav')); // صوت الانفجار
     final blast = CircleComponent(
-      radius: 120, // نصف قطر الانفجار كبير
+      radius: 120,
       position: player.position.clone(),
       paint: Paint()..color = Colors.orange.withOpacity(0.8),
     );
     add(blast);
+    Future.delayed(const Duration(seconds: 1), () => blast.removeFromParent());
 
-    // إزالة الانفجار بعد ثانية
-    Future.delayed(const Duration(seconds: 1), () {
-      blast.removeFromParent();
-    });
-
-    // فحص إذا كان العدو قريباً جداً من الانفجار
     if (isSinglePlayer && player.position.distanceTo(enemy.position) < 120) {
-      enemy.hit();
-      enemy.hit();
-      enemy.hit(); // القنبلة تقتل العدو فوراً (3 ضربات)
-      score += 30; // نقاط إضافية للقنبلة
+      enemy.hit(); enemy.hit(); enemy.hit();
+      score += 30;
     }
-
-    // القنبلة تضربك أنت أيضاً إذا كنت غبياً
     if (isSinglePlayer && player.position.distanceTo(player.position) < 120) {
-      player.health -= 1; // تعاقب نفسك
+      player.health -= 1;
     }
   }
-  // ========================================
 
   @override
   void update(double dt) {
@@ -142,7 +158,6 @@ class BattleGame extends FlameGame with TapDetector {
 
     if (_playerFireCooldown > 0) _playerFireCooldown -= dt;
 
-    // مؤقت القنبلة
     if (_bombCooldown) {
       _bombTimer -= dt;
       if (_bombTimer <= 0) {
@@ -163,7 +178,6 @@ class BattleGame extends FlameGame with TapDetector {
 
     if (isSinglePlayer) {
       enemy.follow(player.position, dt, size);
-      
       _enemyShootTimer += dt;
       if (_enemyShootTimer >= 0.8 - (kills * 0.01)) {
         _enemyShootTimer = 0;
@@ -195,11 +209,8 @@ class BattleGame extends FlameGame with TapDetector {
   void updateBullets(double dt) {
     for (final bullet in bullets.toList()) {
       bullet.updateBullet(dt);
-
-      if (bullet.position.x > size.x + 60 ||
-          bullet.position.x < -60 ||
-          bullet.position.y > size.y + 60 ||
-          bullet.position.y < -60) {
+      if (bullet.position.x > size.x + 60 || bullet.position.x < -60 ||
+          bullet.position.y > size.y + 60 || bullet.position.y < -60) {
         bullet.removeFromParent();
         bullets.remove(bullet);
       }
@@ -213,19 +224,18 @@ class BattleGame extends FlameGame with TapDetector {
           bullet.removeFromParent();
           bullets.remove(bullet);
           enemy.hit();
-
+          audioPlayer.play(AssetSource('sounds/enemy_hit.wav')); // صوت إصابة العدو
           if (enemy.health <= 0) {
             score += 10;
             kills++;
             enemy.reset(random, size);
           }
         }
-        
         if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
           player.health--;
-
+          audioPlayer.play(AssetSource('sounds/player_hit.wav')); // صوت إصابة اللاعب
           if (player.health <= 0) {
             gameOver = true;
             networkService.sendGameOver('remote');
