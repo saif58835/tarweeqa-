@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+// في المستقبل عندما تنشئ هذه الملفات، ستحتاج لإزالة التعليقات وتفعيل هذه الأسطر:
+// import 'ui/host_join_screen.dart';
+// import 'ui/single_player_screen.dart';
 
 void main() {
   runApp(const BattleDuoApp());
@@ -45,6 +48,7 @@ class HomeScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
+                  // الشعار
                   Container(
                     padding: const EdgeInsets.all(22),
                     decoration: BoxDecoration(
@@ -65,7 +69,7 @@ class HomeScreen extends StatelessWidget {
                         ),
                         SizedBox(height: 8),
                         Text(
-                          'لعبة 1v1 عبر نقطة الاتصال أو الشبكة المحلية',
+                          'لعبة 1v1 ضد الروبوت أو الأصدقاء',
                           textAlign: TextAlign.center,
                           style: TextStyle(color: Colors.white70),
                         ),
@@ -73,38 +77,49 @@ class HomeScreen extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 28),
+
+                  // زر اللعب الفردي (ضد الروبوت) - جديد
+                  _MenuButton(
+                    title: 'ضد الروبوت',
+                    subtitle: 'تحدي الذكاء الاصطناعي',
+                    icon: Icons.smart_toy,
+                    onTap: () {
+                      // TODO: استبدل هذه بواجهة SinglePlayerScreen الحقيقية
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const PlaceholderScreen(title: 'ضد الروبوت')),
+                      );
+                    },
+                  ),
+                  
+                  const SizedBox(height: 14),
+
+                  // زر إنشاء غرفة (للأصدقاء)
                   _MenuButton(
                     title: 'إنشاء غرفة',
-                    subtitle: 'Host اللعبة',
+                    subtitle: 'استضف أصدقاءك',
                     icon: Icons.wifi_tethering,
                     onTap: () {
+                      // TODO: استبدل هذه بـ HostJoinScreen مع mode: 'host'
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const PlaceholderScreen(title: 'إنشاء غرفة')),
                       );
                     },
                   ),
+                  
                   const SizedBox(height: 14),
+                  
+                  // زر الانضمام (للأصدقاء)
                   _MenuButton(
                     title: 'الانضمام',
-                    subtitle: 'Join إلى صديقك',
+                    subtitle: 'انضم إلى صديقك',
                     icon: Icons.wifi,
                     onTap: () {
+                      // TODO: استبدل هذه بـ HostJoinScreen مع mode: 'join'
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const PlaceholderScreen(title: 'الانضمام')),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 14),
-                  _MenuButton(
-                    title: 'اللعب المحلي',
-                    subtitle: 'على نفس الشبكة',
-                    icon: Icons.cable,
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const PlaceholderScreen(title: 'اللعب المحلي')),
                       );
                     },
                   ),
@@ -118,6 +133,7 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
+// زر القائمة المخصص
 class _MenuButton extends StatelessWidget {
   final String title;
   final String subtitle;
@@ -166,6 +182,7 @@ class _MenuButton extends StatelessWidget {
   }
 }
 
+// شاشة مؤقتة (سنقوم بحذفها لاحقاً)
 class PlaceholderScreen extends StatelessWidget {
   final String title;
   const PlaceholderScreen({super.key, required this.title});
@@ -176,7 +193,7 @@ class PlaceholderScreen extends StatelessWidget {
       appBar: AppBar(title: Text(title)),
       body: const Center(
         child: Text(
-          'الملفات التالية ستكمل اللعب والانضمام والصالة',
+          'هنا سيتم وضع شاشة اللعب الفعلية (ضد الروبوت أو مع الأصدقاء)',
           textAlign: TextAlign.center,
         ),
       ),
