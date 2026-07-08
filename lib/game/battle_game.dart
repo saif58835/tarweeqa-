@@ -18,20 +18,21 @@ class BattleGame extends FlameGame with TapDetector {
   final bool isSinglePlayer;
 
   late final PlayerController player;
-  late final EnemyController enemy;
-  late final PlayerController remotePlayer;
   late final HudOverlay hud;
-  late final GameMap gameMap;
+  late final SkyBackground skyBg; // خلفية السماء
+
+  // قائمة متعددة للأعداء بدلاً من عدو واحد
+  final List<EnemyController> enemies = [];
+  double _enemySpawnTimer = 0.0;
+  static const double maxEnemies = 5; // أقصى عدد للأعداء في وقت واحد
 
   final AudioPlayer audioPlayer = AudioPlayer();
-
   final Random random = Random();
   final List<BulletController> bullets = [];
 
   int score = 0;
   int kills = 0;
   bool gameOver = false;
-  double _enemyShootTimer = 0;
   double _playerFireCooldown = 0;
 
   int _currentWeaponIndex = 0;
@@ -47,26 +48,20 @@ class BattleGame extends FlameGame with TapDetector {
   });
 
   @override
-  Color backgroundColor() => const Color(0xFF1A1A2E);
+  Color backgroundColor() => const Color(0xFF4facfe);
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
     camera.viewfinder.anchor = Anchor.topLeft;
 
-    gameMap = GameMap(screenSize: size);
-    add(gameMap);
+    // إضافة سماء جوية
+    skyBg = SkyBackground(screenSize: size);
+    add(skyBg);
 
-    player = PlayerController(position: Vector2(100, size.y - 110));
+    // طائرة اللاعب في منتصف الشاشة تقريباً
+    player = PlayerController(position: Vector2(100, size.y / 2));
     add(player);
-
-    if (isSinglePlayer) {
-      enemy = EnemyController(position: Vector2(size.x - 120, 110));
-      add(enemy);
-    } else {
-      remotePlayer = PlayerController(position: Vector2(size.x - 120, 110));
-      add(remotePlayer);
-    }
 
     hud = HudOverlay(gameRef: this);
     add(hud);
@@ -75,10 +70,31 @@ class BattleGame extends FlameGame with TapDetector {
     add(SwitchWeaponButton(gameRef: this));
   }
 
+  // تمركز عدو جديد من حواف الشاشة
+  void spawnEnemy() {
+    if (enemies.length >= maxEnemies) return;
+    
+    double x, y;
+    // يظهر العدو من اليمين أو اليسار أو الأعلى
+    int side = random.nextInt(3);
+    if (side == 0) { // من اليمين
+      x = size.x + 50;
+      y = 50 + random.nextDouble() * (size.y - 100);
+    } else if (side == 1) { // من اليسار
+      x = -50;
+      y = 50 + random.nextDouble() * (size.y - 100);
+    } else { // من الأعلى
+      x = 50 + random.nextDouble() * (size.x - 100);
+      y = -50;
+    }
+
+    final enemy = EnemyController(position: Vector2(x, y));
+    enemies.add(enemy);
+    add(enemy);
+  }
+
   void switchWeapon() {
     _currentWeaponIndex = (_currentWeaponIndex + 1) % _weapons.length;
-    print("السلاح الحالي: ${_weapons[_currentWeaponIndex]}");
-    
     if (_weapons[_currentWeaponIndex] == 'Sniper') {
       _currentZoom = 1.6;
     } else {
@@ -97,31 +113,17 @@ class BattleGame extends FlameGame with TapDetector {
       position: position,
       direction: direction,
       isEnemy: isEnemyBullet,
-      weaponType: currentWeapon, // تمرير نوع السلاح للرصاصة
+      weaponType: currentWeapon,
     );
-
     bullets.add(bullet);
     add(bullet);
 
     if (!isEnemyBullet) {
-      // تحديد سرعة الرماية والصوت حسب السلاح
-      if (_weapons[_currentWeaponIndex] == 'SMG') {
-        _playerFireCooldown = 0.08;
-        audioPlayer.play(AssetSource('sounds/smg_shot.wav')); // صوت رشاش (خيالي حالياً)
-      } else if (_weapons[_currentWeaponIndex] == 'Sniper') {
-        _playerFireCooldown = 1.2;
-        audioPlayer.play(AssetSource('sounds/sniper_shot.wav')); // صوت قناصة (خيالي حالياً)
-      } else {
-        _playerFireCooldown = 0.25;
-        audioPlayer.play(AssetSource('sounds/pistol_shot.wav')); // صوت مسدس (خيالي حالياً)
-      }
-
-      networkService.sendShoot(
-        x: bullet.position.x,
-        y: bullet.position.y,
-        dx: 1,
-        dy: 0,
-      );
+      if (_weapons[_currentWeaponIndex] == 'SMG') _playerFireCooldown = 0.08;
+      else if (_weapons[_currentWeaponIndex] == 'Sniper') _playerFireCooldown = 1.2;
+      else _playerFireCooldown = 0.25;
+      
+      networkService.sendShoot(x: bullet.position.x, y: bullet.position.y, dx: 1, dy: 0);
     }
   }
 
@@ -129,25 +131,18 @@ class BattleGame extends FlameGame with TapDetector {
     if (gameOver || _bombCooldown) return;
     _bombCooldown = true;
     _bombTimer = 3.0;
-    audioPlayer.play(AssetSource('sounds/bomb_throw.wav')); // صوت رمي القنبلة
   }
 
   void _detonateBomb() {
-    audioPlayer.play(AssetSource('sounds/bomb_explode.wav')); // صوت الانفجار
-    final blast = CircleComponent(
-      radius: 120,
-      position: player.position.clone(),
-      paint: Paint()..color = Colors.orange.withOpacity(0.8),
-    );
+    final blast = CircleComponent(radius: 120, position: player.position.clone(), paint: Paint()..color = Colors.orange.withOpacity(0.8));
     add(blast);
     Future.delayed(const Duration(seconds: 1), () => blast.removeFromParent());
 
-    if (isSinglePlayer && player.position.distanceTo(enemy.position) < 120) {
-      enemy.hit(); enemy.hit(); enemy.hit();
-      score += 30;
-    }
-    if (isSinglePlayer && player.position.distanceTo(player.position) < 120) {
-      player.health -= 1;
+    for (final enemy in enemies.toList()) {
+      if (player.position.distanceTo(enemy.position) < 120) {
+        enemy.hit(); enemy.hit(); enemy.hit();
+        score += 30;
+      }
     }
   }
 
@@ -166,45 +161,49 @@ class BattleGame extends FlameGame with TapDetector {
       }
     }
 
-    const speed = 220.0;
+    // تمركز عدو جديد كل ثانية ونصف
+    _enemySpawnTimer += dt;
+    if (_enemySpawnTimer >= 1.5) {
+      _enemySpawnTimer = 0;
+      spawnEnemy();
+    }
 
+    const speed = 220.0;
+    // طيران حر 360 درجة للاعب (لقد أزلنا القيود الأرضية)
     if (player.left) player.position.x -= speed * dt;
     if (player.right) player.position.x += speed * dt;
     if (player.up) player.position.y -= speed * dt;
     if (player.down) player.position.y += speed * dt;
+    
+    // حدود الشاشة فقط
+    player.position.x = player.position.x.clamp(20, size.x - 20);
+    player.position.y = player.position.y.clamp(20, size.y - 20);
 
-    player.position.x = player.position.x.clamp(30, size.x - 30);
-    player.position.y = player.position.y.clamp(90, size.y - 30);
-
-    if (isSinglePlayer) {
+    // تحديث حركة كل الأعداء وإطلاق النار
+    for (final enemy in enemies.toList()) {
       enemy.follow(player.position, dt, size);
-      _enemyShootTimer += dt;
+      
       if (_enemyShootTimer >= 0.8 - (kills * 0.01)) {
-        _enemyShootTimer = 0;
         Vector2 dir = (player.position - enemy.position).normalized();
         shoot(true, enemy.position.clone(), dir);
       }
-    } else {
-      if (networkService.remotePlayer != null) {
-        remotePlayer.position.x = networkService.remotePlayer!.x;
-        remotePlayer.position.y = networkService.remotePlayer!.y;
-      }
+    }
+    _enemyShootTimer += dt;
+    if (_enemyShootTimer >= 0.8 - (kills * 0.01)) {
+      _enemyShootTimer = 0;
     }
 
     updateBullets(dt);
     checkCollisions();
 
     if (networkService.localPlayer != null) {
-      networkService.sendState(
-        networkService.localPlayer!.copyWith(
-          x: player.position.x,
-          y: player.position.y,
-          health: player.health,
-          score: score,
-        ),
-      );
+      networkService.sendState(networkService.localPlayer!.copyWith(
+        x: player.position.x, y: player.position.y,
+        health: player.health, score: score,
+      ));
     }
   }
+  double _enemyShootTimer = 0; // متغير للوقت (تم نقله للأعلى ليعمل)
 
   void updateBullets(double dt) {
     for (final bullet in bullets.toList()) {
@@ -219,36 +218,31 @@ class BattleGame extends FlameGame with TapDetector {
 
   void checkCollisions() {
     for (final bullet in bullets.toList()) {
-      if (isSinglePlayer) {
-        if (!bullet.isEnemy && bullet.position.distanceTo(enemy.position) < 30) {
-          bullet.removeFromParent();
-          bullets.remove(bullet);
-          enemy.hit();
-          audioPlayer.play(AssetSource('sounds/enemy_hit.wav')); // صوت إصابة العدو
-          if (enemy.health <= 0) {
-            score += 10;
-            kills++;
-            enemy.reset(random, size);
+      // فحص إصابة الأعداء برصاصك
+      if (!bullet.isEnemy) {
+        for (final enemy in enemies.toList()) {
+          if (bullet.position.distanceTo(enemy.position) < 30) {
+            bullet.removeFromParent();
+            bullets.remove(bullet);
+            enemy.hit();
+            if (enemy.health <= 0) {
+              score += 10;
+              kills++;
+              enemy.removeFromParent();
+              enemies.remove(enemy);
+            }
+            break;
           }
         }
-        if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
-          bullet.removeFromParent();
-          bullets.remove(bullet);
-          player.health--;
-          audioPlayer.play(AssetSource('sounds/player_hit.wav')); // صوت إصابة اللاعب
-          if (player.health <= 0) {
-            gameOver = true;
-            networkService.sendGameOver('remote');
-          }
-        }
-      } else {
-        if (!bullet.isEnemy && bullet.position.distanceTo(remotePlayer.position) < 30) {
-          bullet.removeFromParent();
-          bullets.remove(bullet);
-        }
-        if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
-          bullet.removeFromParent();
-          bullets.remove(bullet);
+      }
+      // فحص إصابتك برصاص العدو
+      if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
+        bullet.removeFromParent();
+        bullets.remove(bullet);
+        player.health--;
+        if (player.health <= 0) {
+          gameOver = true;
+          networkService.sendGameOver('remote');
         }
       }
     }
