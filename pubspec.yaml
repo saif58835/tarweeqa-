@@ -31,3 +31,16 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+dependencies:
+  flutter:
+    sdk: flutter
+  audioplayers: ^6.0.0  # إضافة هذا السطر للمكتبة الصوتية
+
+flutter:
+  uses-material-design: true
+
+  # إضافة هذا الجزء للتعرف على ملفات الصور والأصوات
+  assets:
+    - assets/images/
+    - assets/sounds/
