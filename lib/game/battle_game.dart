@@ -19,12 +19,11 @@ class BattleGame extends FlameGame with TapDetector {
 
   late final PlayerController player;
   late final HudOverlay hud;
-  late final SkyBackground skyBg; // خلفية السماء
+  late final SkyBackground skyBg;
 
-  // قائمة متعددة للأعداء بدلاً من عدو واحد
+  // **قائمة الأعداء بلا حدود**
   final List<EnemyController> enemies = [];
   double _enemySpawnTimer = 0.0;
-  static const double maxEnemies = 5; // أقصى عدد للأعداء في وقت واحد
 
   final AudioPlayer audioPlayer = AudioPlayer();
   final Random random = Random();
@@ -55,11 +54,9 @@ class BattleGame extends FlameGame with TapDetector {
     await super.onLoad();
     camera.viewfinder.anchor = Anchor.topLeft;
 
-    // إضافة سماء جوية
     skyBg = SkyBackground(screenSize: size);
     add(skyBg);
 
-    // طائرة اللاعب في منتصف الشاشة تقريباً
     player = PlayerController(position: Vector2(100, size.y / 2));
     add(player);
 
@@ -70,20 +67,17 @@ class BattleGame extends FlameGame with TapDetector {
     add(SwitchWeaponButton(gameRef: this));
   }
 
-  // تمركز عدو جديد من حواف الشاشة
+  // **توليد الأعداء بشكل لا نهائي**
   void spawnEnemy() {
-    if (enemies.length >= maxEnemies) return;
-    
     double x, y;
-    // يظهر العدو من اليمين أو اليسار أو الأعلى
     int side = random.nextInt(3);
-    if (side == 0) { // من اليمين
+    if (side == 0) {
       x = size.x + 50;
       y = 50 + random.nextDouble() * (size.y - 100);
-    } else if (side == 1) { // من اليسار
+    } else if (side == 1) {
       x = -50;
       y = 50 + random.nextDouble() * (size.y - 100);
-    } else { // من الأعلى
+    } else {
       x = 50 + random.nextDouble() * (size.x - 100);
       y = -50;
     }
@@ -161,37 +155,42 @@ class BattleGame extends FlameGame with TapDetector {
       }
     }
 
-    // تمركز عدو جديد كل ثانية ونصف
+    // **جديد: تكاثر الأعداء بشكل لا نهائي!**
+    // كلما زاد عدد القتلى، زادت سرعة تكاثرهم
+    double spawnSpeed = 2.0 - (kills * 0.02);
+    if (spawnSpeed < 0.3) spawnSpeed = 0.3; // حد أدنى للسرعة حتى لا يغرق الهاتف
+
     _enemySpawnTimer += dt;
-    if (_enemySpawnTimer >= 1.5) {
+    if (_enemySpawnTimer >= spawnSpeed) {
       _enemySpawnTimer = 0;
       spawnEnemy();
     }
 
     const speed = 220.0;
-    // طيران حر 360 درجة للاعب (لقد أزلنا القيود الأرضية)
     if (player.left) player.position.x -= speed * dt;
     if (player.right) player.position.x += speed * dt;
     if (player.up) player.position.y -= speed * dt;
     if (player.down) player.position.y += speed * dt;
     
-    // حدود الشاشة فقط
     player.position.x = player.position.x.clamp(20, size.x - 20);
     player.position.y = player.position.y.clamp(20, size.y - 20);
 
-    // تحديث حركة كل الأعداء وإطلاق النار
+    // تحديث حركة كل الأعداء
     for (final enemy in enemies.toList()) {
       enemy.follow(player.position, dt, size);
-      
-      if (_enemyShootTimer >= 0.8 - (kills * 0.01)) {
-        Vector2 dir = (player.position - enemy.position).normalized();
-        shoot(true, enemy.position.clone(), dir);
-      }
     }
-    _enemyShootTimer += dt;
+
+    // الأعداء يطلقون النار بشكل جماعي ومتناثر
     if (_enemyShootTimer >= 0.8 - (kills * 0.01)) {
+      for (final enemy in enemies.toList()) {
+        if (random.nextDouble() > 0.3) { // ليس كل الأعداء يطلقون النار في نفس اللحظة
+          Vector2 dir = (player.position - enemy.position).normalized();
+          shoot(true, enemy.position.clone(), dir);
+        }
+      }
       _enemyShootTimer = 0;
     }
+    _enemyShootTimer += dt;
 
     updateBullets(dt);
     checkCollisions();
@@ -203,7 +202,7 @@ class BattleGame extends FlameGame with TapDetector {
       ));
     }
   }
-  double _enemyShootTimer = 0; // متغير للوقت (تم نقله للأعلى ليعمل)
+  double _enemyShootTimer = 0;
 
   void updateBullets(double dt) {
     for (final bullet in bullets.toList()) {
@@ -218,7 +217,6 @@ class BattleGame extends FlameGame with TapDetector {
 
   void checkCollisions() {
     for (final bullet in bullets.toList()) {
-      // فحص إصابة الأعداء برصاصك
       if (!bullet.isEnemy) {
         for (final enemy in enemies.toList()) {
           if (bullet.position.distanceTo(enemy.position) < 30) {
@@ -235,7 +233,6 @@ class BattleGame extends FlameGame with TapDetector {
           }
         }
       }
-      // فحص إصابتك برصاص العدو
       if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
         bullet.removeFromParent();
         bullets.remove(bullet);
