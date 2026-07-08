@@ -1,112 +1,90 @@
-import 'dart:async';
-import 'network_manager.dart';
-import 'network_messages.dart';
-import 'player_state.dart';
-import 'room_model.dart';
+import 'package:socket_io_client/socket_io_client.dart' as IO;
+import 'package:flutter/material.dart';
 
-class NetworkService {
-  late final NetworkManager _manager;
+class NetworkService extends ChangeNotifier {
+  late IO.Socket socket;
+  String? _roomId;
+  String? _playerId;
+  String? _playerName;
+  
+  // قائمة اللاعبين الآخرين في الغرفة (بدون احتساب نفسك)
+  List<Map<String, dynamic>> playersInRoom = [];
 
-  RoomModel? room;
-  PlayerState? localPlayer;
-  PlayerState? remotePlayer;
-
-  final StreamController<Map<String, dynamic>> _messageController =
-      StreamController.broadcast();
-
-  Stream<Map<String, dynamic>> get messages => _messageController.stream;
-
-  NetworkService() {
-    _manager = NetworkManager(
-      onMessage: _handleMessage,
-      onConnected: () {},
-      onError: (error) {},
-      onDisconnected: () {},
+  // دالة الاتصال بالخادم
+  void connectToServer(String serverUrl) {
+    socket = IO.io(serverUrl, IO.OptionBuilder()
+      .setTransports(['websocket']) // ضروري للاتصال السريع
+      .disableAutoConnect()
+      .build()
     );
+    socket.connect();
+
+    // الاستماع لتحديث قائمة اللاعبين عند دخول أحدهم أو خروجه
+    socket.on('update_players', (data) {
+      playersInRoom = List<Map<String, dynamic>>.from(data);
+      // إزالة نفسي من القائمة حتى لا تظهر شخصيتي كعدو
+      playersInRoom.removeWhere((player) => player['id'] == _playerId);
+      notifyListeners(); // تحديث الواجهة الرسومية (لإظهار أسماء الأصدقاء)
+    });
+
+    // الاستماع لحركة أي لاعب آخر
+    socket.on('opponent_moved', (data) {
+      final index = playersInRoom.indexWhere((p) => p['id'] == data['playerId']);
+      if (index != -1) {
+        playersInRoom[index]['x'] = data['x'];
+        playersInRoom[index]['y'] = data['y'];
+        notifyListeners(); // تحديث موقع الخصم في اللعبة
+      }
+    });
+
+    // الاستماع لإطلاق نار خصم
+    socket.on('opponent_shoot', (data) {
+      // (اختياري) يمكنك إضافة منطق لإظهار رصاصة الخصم هنا في المستقبل
+      print("خصم أطلق النار من: ${data['x']}, ${data['y']}");
+    });
   }
 
-  void _handleMessage(Map<String, dynamic> data) {
-    _messageController.add(data);
+  // الانضمام إلى غرفة
+  void joinRoom(String roomId, String name) {
+    _roomId = roomId;
+    _playerName = name;
+    socket.emit('join_room', {'roomId': roomId, 'playerName': name});
+    
+    // حفظ الـ ID الخاص بي القادم من الخادم
+    socket.on('connect', (_) {
+      _playerId = socket.id;
+    });
   }
 
-  Future<void> host({
-    required String name,
-    required String roomId,
-    required int port,
-  }) async {
-    room = RoomModel(roomId: roomId, hostName: name, isActive: false);
-    localPlayer = PlayerState(
-      id: 'host',
-      name: name,
-      x: 100,
-      y: 100,
-      health: 3,
-      score: 0,
-      isAlive: true,
-    );
-    await _manager.host(port: port);
+  // إرسال حركتي للخادم (كي يراها الأصدقاء)
+  void sendPosition(double x, double y) {
+    if (_roomId != null && _playerId != null) {
+      socket.emit('update_position', {
+        'roomId': _roomId,
+        'playerId': _playerId,
+        'x': x,
+        'y': y,
+      });
+    }
   }
 
-  Future<void> join({
-    required String name,
-    required String roomId,
-    required String ip,
-    required int port,
-  }) async {
-    room = RoomModel(
-      roomId: roomId,
-      hostName: '',
-      joinName: name,
-      isActive: false,
-    );
-    localPlayer = PlayerState(
-      id: 'join',
-      name: name,
-      x: 200,
-      y: 100,
-      health: 3,
-      score: 0,
-      isAlive: true,
-    );
-    await _manager.join(ip: ip, port: port);
+  // إرسال إطلاق النار
+  void sendShoot(double x, double y, double dx, double dy) {
+    if (_roomId != null) {
+      socket.emit('player_shoot', {
+        'roomId': _roomId,
+        'x': x,
+        'y': y,
+        'dx': dx,
+        'dy': dy,
+      });
+    }
   }
 
-  void sendJoin() {
-    if (localPlayer == null) return;
-    _manager.send(
-      NetworkMessages.join(
-        name: localPlayer!.name,
-        role: localPlayer!.id,
-      ),
-    );
-  }
-
-  void sendState(PlayerState state) {
-    _manager.send(
-      NetworkMessages.state(
-        x: state.x,
-        y: state.y,
-        health: state.health,
-        score: state.score,
-      ),
-    );
-  }
-
-  void sendShoot({
-    required double x,
-    required double y,
-    required double dx,
-    required double dy,
-  }) {
-    _manager.send(NetworkMessages.shoot(x: x, y: y, dx: dx, dy: dy));
-  }
-
-  void sendGameOver(String winner) {
-    _manager.send(NetworkMessages.gameOver(winner: winner));
-  }
-
-  Future<void> disconnect() async {
-    await _manager.disconnect();
-    await _messageController.close();
+  // عند إغلاق التطبيق
+  @override
+  void dispose() {
+    socket.dispose();
+    super.dispose();
   }
 }
