@@ -12,109 +12,133 @@ class HostJoinScreen extends StatefulWidget {
 class _HostJoinScreenState extends State<HostJoinScreen> {
   final TextEditingController nameController = TextEditingController();
   final TextEditingController roomController = TextEditingController();
-  final TextEditingController ipController = TextEditingController(text: '192.168.1.1');
-  final TextEditingController portController = TextEditingController(text: '4040');
+  // **مهم جدًا:** غير هذا الرابط حسب مكان تشغيل سيرفرك
+  final TextEditingController serverController = TextEditingController(text: 'http://localhost:3000'); 
 
   final NetworkService networkService = NetworkService();
-
   bool isLoading = false;
-  String mode = 'host';
 
   @override
   void dispose() {
     nameController.dispose();
     roomController.dispose();
-    ipController.dispose();
-    portController.dispose();
+    serverController.dispose();
     super.dispose();
   }
 
-  Future<void> handleAction() async {
+  void handleJoin() async {
     final name = nameController.text.trim();
     final roomId = roomController.text.trim();
-    final ip = ipController.text.trim();
-    final port = int.tryParse(portController.text.trim()) ?? 4040;
+    final serverUrl = serverController.text.trim();
 
-    if (name.isEmpty || roomId.isEmpty) return;
+    if (name.isEmpty || roomId.isEmpty || serverUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('يرجى ملء جميع الحقول!')),
+      );
+      return;
+    }
 
     setState(() => isLoading = true);
 
-    try {
-      if (mode == 'host') {
-        await networkService.host(name: name, roomId: roomId, port: port);
-      } else {
-        await networkService.join(
-          name: name,
-          roomId: roomId,
-          ip: ip,
-          port: port,
-        );
-      }
+    // 1. الاتصال بالخادم
+    networkService.connectToServer(serverUrl);
+    // 2. الانضمام للغرفة
+    networkService.joinRoom(roomId, name);
 
-      if (!mounted) return;
+    // ننتظر قليلاً لتأكيد الاتصال وسماع الـ update_players الأول
+    await Future.delayed(const Duration(seconds: 1));
 
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => GameScreen(networkService: networkService),
+    if (!mounted) return;
+    setState(() => isLoading = false);
+
+    // 3. الذهاب لشاشة اللعبة مع تمرير بيانات الشبكة
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameScreen(
+          networkService: networkService,
+          isSinglePlayer: false, // هذه لعبة جماعية متعددة
         ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => isLoading = false);
-      }
-    }
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    // الاستماع لأي تغيير في قائمة اللاعبين لتحديث الواجهة تلقائياً
+    networkService.addListener(() {
+      if (mounted) setState(() {});
+    });
+
     return Scaffold(
       backgroundColor: const Color(0xFF0F1020),
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 const Text(
-                  'Mini Mission',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                  ),
+                  'Warrior Sword Multiplayer',
+                  style: TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.bold),
                 ),
+                const SizedBox(height: 10),
+                const Text(
+                  'انضم إلى المعركة مع أصدقائك',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
+                const SizedBox(height: 40),
+                
+                _buildField(nameController, 'اسمك في المعركة'),
+                const SizedBox(height: 14),
+                _buildField(roomController, 'كود الغرفة (شاركه مع أصدقائك)'),
+                const SizedBox(height: 14),
+                _buildField(serverController, 'رابط الخادم (IP)'),
+                
                 const SizedBox(height: 30),
-                _buildField(nameController, 'Your name'),
-                const SizedBox(height: 12),
-                _buildField(roomController, 'Room ID'),
-                const SizedBox(height: 12),
-                _buildField(ipController, 'Host IP'),
-                const SizedBox(height: 12),
-                _buildField(portController, 'Port', keyboardType: TextInputType.number),
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _modeButton('host', 'Host'),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _modeButton('join', 'Join'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
-                  height: 52,
+                  height: 54,
                   child: ElevatedButton(
-                    onPressed: isLoading ? null : handleAction,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.cyanAccent,
+                      foregroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: isLoading ? null : handleJoin,
                     child: isLoading
-                        ? const CircularProgressIndicator()
-                        : Text(mode == 'host' ? 'Create Room' : 'Join Room'),
+                        ? const CircularProgressIndicator(color: Colors.black)
+                        : const Text('دخول ساحة القتال', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                   ),
+                ),
+                
+                // عرض قائمة الأصدقاء الموجودين في الغرفة
+                const SizedBox(height: 30),
+                const Text("اللاعبون في الغرفة:", style: TextStyle(color: Colors.white70, fontSize: 16)),
+                const SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: networkService.playersInRoom.isEmpty
+                      ? const Text("لا يوجد لاعبون آخرون بعد...", style: TextStyle(color: Colors.white38))
+                      : Column(
+                          children: networkService.playersInRoom.map((player) {
+                            return Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 4),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.person, color: Colors.cyanAccent, size: 18),
+                                  const SizedBox(width: 8),
+                                  Text("• ${player['name']}", style: const TextStyle(color: Colors.white, fontSize: 16)),
+                                ],
+                              ),
+                            );
+                          }).toList(),
+                        ),
                 ),
               ],
             ),
@@ -124,14 +148,9 @@ class _HostJoinScreenState extends State<HostJoinScreen> {
     );
   }
 
-  Widget _buildField(
-    TextEditingController controller,
-    String hint, {
-    TextInputType keyboardType = TextInputType.text,
-  }) {
+  Widget _buildField(TextEditingController controller, String hint) {
     return TextField(
       controller: controller,
-      keyboardType: keyboardType,
       style: const TextStyle(color: Colors.white),
       decoration: InputDecoration(
         hintText: hint,
@@ -142,21 +161,8 @@ class _HostJoinScreenState extends State<HostJoinScreen> {
           borderRadius: BorderRadius.circular(14),
           borderSide: BorderSide.none,
         ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
       ),
-    );
-  }
-
-  Widget _modeButton(String value, String text) {
-    final selected = mode == value;
-    return OutlinedButton(
-      onPressed: () => setState(() => mode = value),
-      style: OutlinedButton.styleFrom(
-        backgroundColor: selected ? Colors.cyanAccent.withOpacity(0.2) : Colors.white10,
-        foregroundColor: Colors.white,
-        side: BorderSide(color: selected ? Colors.cyanAccent : Colors.white24),
-        padding: const EdgeInsets.symmetric(vertical: 14),
-      ),
-      child: Text(text),
     );
   }
 }
