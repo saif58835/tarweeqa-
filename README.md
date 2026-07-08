@@ -1,31 +1,64 @@
-# Tarweqa 🚀
+# ⚔️ Saif Warrior
 
-A Flutter mobile application built with Dart.
+**Saif Warrior** هي لعبة قتال وتصويب (Mini Mission) ثنائية الأبعاد مبنية باستخدام Flutter و Flame Engine. تدعم اللعبة القتال ضد الذكاء الاصطناعي (الروبوت)، مع نظام أسلحة وقنابل متطور! 🚀
 
-## 📱 About
+---
 
-Tarweqa is a Flutter project focused on providing a smooth and simple mobile application experience.
+## 🎮 مميزات اللعبة
 
-## ✨ Features
+*   **قتال ضد الروبوت (AI):** تحدي الذكاء الاصطناعي في معارك سريعة.
+*   **نظام أسلحة متعدد:** إطلاق نار سريع + قنابل يدوية ذات انفجار كبير!
+*   **تحكم سلس باللمس (Joystick):** حركة مريحة للاعب على شاشات الهواتف.
+*   **تطور صعوبة العدو:** كلما قتلت المزيد من الأعداء، كلما زادت سرعتهم وقوتهم!
+*   **نظام نقاط (Score & Kills):** تتبع تقدمك وقتلك للأعداء.
+*   **تصميم شاشة أفقي (Landscape):** تجربة لعب سينمائية كاملة.
+*   *(قادم قريباً): نظام اللعب الجماعي عبر الإنترنت.*
 
-- Modern Flutter UI
-- Fast and responsive performance
-- Cross-platform support (Android & iOS)
-- Firebase integration
+---
 
-## 🛠 Technologies
+## 🛠️ التقنيات المستخدمة
 
-- Flutter
-- Dart
-- Firebase
+*   **اللغة:** Dart
+*   **الإطار:** Flutter
+*   **محرك الألعاب:** Flame Engine (لإنشاء الرسومات والحركة الفيزيائية).
+*   **إدارة الحالة:** Streams / Flutter BLoC.
+*   **مكتبات مساعدة:** 
+    *   `audioplayers` (لتشغيل المؤثرات الصوتية لاحقاً).
+    *   `network_service` (لربط اللاعبين في المستقبل).
 
-## 📂 Project Structure
+---
 
-## 🚀 Getting Started
+## 📸 طريقة اللعب
+1. استخدم **عصا التحكم (Joystick)** في الزاوية اليسرى السفلية للتحرك.
+2. **اضغط في أي مكان** على الشاشة لإطلاق النار.
+3. استخدم **الزر الأحمر** في الزاوية اليمنى السفلية لإلقاء قنبلة (تنفجر بعد 3 ثوانٍ).
+4. استخدم **الزر الأصفر** لتبديل الأسلحة (قيد التطوير).
 
-Install project dependencies:
+---
 
-```bash
-flutter pub get
+## 📦 كيفية تشغيل المشروع محلياً
 
-flutter run
+1.  **تأكد من تثبيت Flutter SDK:**
+    ```bash
+    flutter --version
+    ```
+2.  **قم بتنزيل مكتبات المشروع:**
+    ```bash
+    flutter pub get
+    ```
+3.  **شغّل اللعبة على هاتفك أو المحاكي:**
+    ```bash
+    flutter run
+    ```
+
+*(ملاحظة: اللعبة تدعم iOS و Android).*
+
+---
+
+## 📝 ملاحظات للمطورين
+*   جميع ملفات اللعبة موجودة داخل مجلد `lib/game`.
+*   لرؤية منطق المعركة والذكاء الاصطناعي، اذهب إلى `lib/game/battle_game.dart`.
+
+---
+
+**سيف المحارب! استمتع بالمعركة! 🗡️**
