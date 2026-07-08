@@ -1,5 +1,4 @@
 import 'dart:math';
-
 import 'package:flame/components.dart';
 import 'package:flame/events.dart';
 import 'package:flame/game.dart';
@@ -13,9 +12,11 @@ import 'player_controller.dart';
 
 class BattleGame extends FlameGame with TapDetector {
   final NetworkService networkService;
+  final bool isSinglePlayer; // متغير جديد للاختيار
 
   late final PlayerController player;
-  late final EnemyController enemy;
+  late final EnemyController enemy; // في حالة العدو الروبوت
+  late final PlayerController remotePlayer; // في حالة اللاعب الصديق
   late final HudOverlay hud;
 
   final Random random = Random();
@@ -24,7 +25,10 @@ class BattleGame extends FlameGame with TapDetector {
   int score = 0;
   bool gameOver = false;
 
-  BattleGame({required this.networkService});
+  BattleGame({
+    required this.networkService,
+    this.isSinglePlayer = false, // افتراضي: ضد صديق
+  });
 
   @override
   Color backgroundColor() => const Color(0xFF0F1020);
@@ -32,20 +36,33 @@ class BattleGame extends FlameGame with TapDetector {
   @override
   Future<void> onLoad() async {
     await super.onLoad();
-
     camera.viewfinder.anchor = Anchor.topLeft;
 
+    // إنشاء اللاعب المحلي
     player = PlayerController(
       position: Vector2(100, size.y - 110),
+      isLocal: true,
     );
+    add(player);
 
-    enemy = EnemyController(
-      position: Vector2(size.x - 120, 110),
-    );
+    // منطق الاختيار: روبوت أم صديق
+    if (isSinglePlayer) {
+      // الوضع الفردي: أنشئ عدواً (روبوت)
+      enemy = EnemyController(
+        position: Vector2(size.x - 120, 110),
+      );
+      add(enemy);
+    } else {
+      // الوضع الجماعي: أنشئ مكاناً للاعب الصديق
+      remotePlayer = PlayerController(
+        position: Vector2(size.x - 120, 110),
+        isLocal: false, // ليس أنت، بل الصديق
+      );
+      add(remotePlayer);
+    }
 
     hud = HudOverlay();
-
-    addAll([player, enemy, hud]);
+    add(hud);
   }
 
   void shoot() {
@@ -70,11 +87,11 @@ class BattleGame extends FlameGame with TapDetector {
   @override
   void update(double dt) {
     super.update(dt);
-
     if (gameOver) return;
 
     const speed = 220.0;
 
+    // 1. تحديث حركة اللاعب المحلي
     if (player.left) player.position.x -= speed * dt;
     if (player.right) player.position.x += speed * dt;
     if (player.up) player.position.y -= speed * dt;
@@ -83,10 +100,22 @@ class BattleGame extends FlameGame with TapDetector {
     player.position.x = player.position.x.clamp(30, size.x - 30);
     player.position.y = player.position.y.clamp(90, size.y - 30);
 
-    enemy.follow(player.position, dt, size);
+    // 2. تحديث حركة الخصم
+    if (isSinglePlayer) {
+      // ضد الروبوت: يتبعك
+      enemy.follow(player.position, dt, size);
+    } else {
+      // ضد الصديق: يجب تحديث موقعه بناءً على بيانات الشبكة القادمة
+      if (networkService.remotePlayer != null) {
+        remotePlayer.position.x = networkService.remotePlayer!.x;
+        remotePlayer.position.y = networkService.remotePlayer!.y;
+      }
+    }
+
     updateBullets(dt);
     checkCollisions();
 
+    // إرسال حالة اللاعب للشبكة
     if (networkService.localPlayer != null) {
       networkService.sendState(
         networkService.localPlayer!.copyWith(
@@ -114,22 +143,40 @@ class BattleGame extends FlameGame with TapDetector {
   }
 
   void checkCollisions() {
-    for (final bullet in bullets.toList()) {
-      if (bullet.position.distanceTo(enemy.position) < 30) {
-        bullet.removeFromParent();
-        bullets.remove(bullet);
-        enemy.hit();
+    // فحص التصادم مع الخصم
+    if (isSinglePlayer) {
+      // مع الروبوت
+      for (final bullet in bullets.toList()) {
+        if (bullet.position.distanceTo(enemy.position) < 30) {
+          bullet.removeFromParent();
+          bullets.remove(bullet);
+          enemy.hit();
 
-        if (enemy.health <= 0) {
-          score += 10;
-          enemy.reset(random, size);
+          if (enemy.health <= 0) {
+            score += 10;
+            enemy.reset(random, size);
+          }
         }
       }
-    }
 
-    if (player.position.distanceTo(enemy.position) < 32) {
-      gameOver = true;
-      networkService.sendGameOver('remote');
+      if (player.position.distanceTo(enemy.position) < 32) {
+        gameOver = true;
+        networkService.sendGameOver('remote');
+      }
+    } else {
+      // مع الصديق
+      for (final bullet in bullets.toList()) {
+        if (bullet.position.distanceTo(remotePlayer.position) < 30) {
+          bullet.removeFromParent();
+          bullets.remove(bullet);
+          // هنا نرسل للشبكة أن الرصاصة أصابت الصديق
+        }
+      }
+
+      if (player.position.distanceTo(remotePlayer.position) < 32) {
+        gameOver = true;
+        networkService.sendGameOver('remote');
+      }
     }
   }
 
