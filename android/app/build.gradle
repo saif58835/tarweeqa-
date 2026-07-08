@@ -1,5 +1,6 @@
 def localProperties = new Properties()
 def localPropertiesFile = rootProject.file('local.properties')
+
 if (localPropertiesFile.exists()) {
     localPropertiesFile.withReader('UTF-8') { reader ->
         localProperties.load(reader)
@@ -7,16 +8,19 @@ if (localPropertiesFile.exists()) {
 }
 
 def flutterRoot = localProperties.getProperty('flutter.sdk')
+
 if (flutterRoot == null) {
     throw new GradleException("Flutter SDK not found. Define location with flutter.sdk in the local.properties file.")
 }
 
 def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+
 if (flutterVersionCode == null) {
     flutterVersionCode = '1'
 }
 
 def flutterVersionName = localProperties.getProperty('flutter.versionName')
+
 if (flutterVersionName == null) {
     flutterVersionName = '1.0'
 }
@@ -28,7 +32,10 @@ apply plugin: 'com.google.gms.google-services'
 apply plugin: 'com.google.firebase.crashlytics'
 
 android {
+    namespace "com.example.tarweeqa"
+
     compileSdk 34
+
     ndkVersion flutter.ndkVersion
 
     compileOptions {
@@ -46,25 +53,31 @@ android {
 
     defaultConfig {
         applicationId "com.example.tarweeqa"
+
         minSdk 23
         targetSdk 34
+
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+
         multiDexEnabled true
     }
 
-    // **حل مشكلة audioplayers (مهم جداً)**
-    packagingOptions {
-        exclude 'META-INF/DEPENDENCIES'
-        exclude 'META-INF/LICENSE'
-        exclude 'META-INF/LICENSE.txt'
-        exclude 'META-INF/NOTICE'
-        exclude 'META-INF/NOTICE.txt'
-        exclude 'META-INF/notice.txt'
-        exclude 'META-INF/license.txt'
-        exclude 'META-INF/AL2.0'
-        exclude 'META-INF/LGPL2.1'
-        exclude 'META-INF/*.kotlin_module'
+    packaging {
+        resources {
+            excludes += [
+                'META-INF/DEPENDENCIES',
+                'META-INF/LICENSE',
+                'META-INF/LICENSE.txt',
+                'META-INF/NOTICE',
+                'META-INF/NOTICE.txt',
+                'META-INF/notice.txt',
+                'META-INF/license.txt',
+                'META-INF/AL2.0',
+                'META-INF/LGPL2.1',
+                'META-INF/*.kotlin_module'
+            ]
+        }
     }
 
     signingConfigs {
@@ -79,8 +92,12 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
+
             minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+
+            proguardFiles getDefaultProguardFile(
+                'proguard-android-optimize.txt'
+            ), 'proguard-rules.pro'
         }
     }
 }
