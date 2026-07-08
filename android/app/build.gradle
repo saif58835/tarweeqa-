@@ -53,7 +53,7 @@ android {
         multiDexEnabled true
     }
 
-    // **الحل السحري لمشكلة audioplayers: إضافة هذا القسم**
+    // **حل مشكلة audioplayers (مهم جداً)**
     packagingOptions {
         exclude 'META-INF/DEPENDENCIES'
         exclude 'META-INF/LICENSE'
