@@ -12,23 +12,23 @@ import 'player_controller.dart';
 
 class BattleGame extends FlameGame with TapDetector {
   final NetworkService networkService;
-  final bool isSinglePlayer; 
+  final bool isSinglePlayer;
 
   late final PlayerController player;
-  late final EnemyController enemy; 
-  late final PlayerController remotePlayer; 
-  late final HudOverlay hud;
+  late final EnemyController enemy;
+  late final PlayerController remotePlayer;
+  late final HudOverlay hud; 
 
   final Random random = Random();
   final List<BulletController> bullets = [];
 
   int score = 0;
   bool gameOver = false;
-  double _enemyShootTimer = 0; // **جديد: مؤقت لإطلاق نار العدو**
+  double _enemyShootTimer = 0;
 
   BattleGame({
     required this.networkService,
-    this.isSinglePlayer = false, 
+    this.isSinglePlayer = false,
   });
 
   @override
@@ -39,47 +39,34 @@ class BattleGame extends FlameGame with TapDetector {
     await super.onLoad();
     camera.viewfinder.anchor = Anchor.topLeft;
 
-    // إنشاء اللاعب المحلي
-    player = PlayerController(
-      position: Vector2(100, size.y - 110),
-      isLocal: true,
-    );
+    player = PlayerController(position: Vector2(100, size.y - 110));
     add(player);
 
-    // منطق الاختيار: روبوت أم صديق
     if (isSinglePlayer) {
-      // الوضع الفردي: أنشئ عدواً (روبوت)
-      enemy = EnemyController(
-        position: Vector2(size.x - 120, 110),
-      );
+      enemy = EnemyController(position: Vector2(size.x - 120, 110));
       add(enemy);
     } else {
-      // الوضع الجماعي: أنشئ مكاناً للاعب الصديق
-      remotePlayer = PlayerController(
-        position: Vector2(size.x - 120, 110),
-        isLocal: false, 
-      );
+      remotePlayer = PlayerController(position: Vector2(size.x - 120, 110));
       add(remotePlayer);
     }
 
+    // **تعديل مهم: إنشاء الـ HUD وإضافته للعبة**
     hud = HudOverlay();
     add(hud);
   }
 
-  // **جديد: دالة إطلاق النار تدعم تحديد من أطلق (أنت أم العدو)**
   void shoot(bool isEnemyBullet, Vector2 position, Vector2 direction) {
     if (gameOver) return;
 
     final bullet = BulletController(
       position: position,
       direction: direction,
-      isEnemy: isEnemyBullet, // تمرير ما إذا كانت رصاصة عدو أم لا
+      isEnemy: isEnemyBullet,
     );
 
     bullets.add(bullet);
     add(bullet);
 
-    // إرسال الشبكة فقط إذا كان اللاعب هو من أطلق
     if (!isEnemyBullet) {
       networkService.sendShoot(
         x: bullet.position.x,
@@ -97,7 +84,6 @@ class BattleGame extends FlameGame with TapDetector {
 
     const speed = 220.0;
 
-    // 1. تحديث حركة اللاعب المحلي
     if (player.left) player.position.x -= speed * dt;
     if (player.right) player.position.x += speed * dt;
     if (player.up) player.position.y -= speed * dt;
@@ -106,21 +92,16 @@ class BattleGame extends FlameGame with TapDetector {
     player.position.x = player.position.x.clamp(30, size.x - 30);
     player.position.y = player.position.y.clamp(90, size.y - 30);
 
-    // 2. تحديث حركة الخصم
     if (isSinglePlayer) {
-      // ضد الروبوت: يتبعك
       enemy.follow(player.position, dt, size);
       
-      // **جديد: العدو يطلق النار**
       _enemyShootTimer += dt;
       if (_enemyShootTimer >= 0.8) {
         _enemyShootTimer = 0;
-        // حساب اتجاه الرصاصة من العدو نحو اللاعب
         Vector2 dir = (player.position - enemy.position).normalized();
         shoot(true, enemy.position.clone(), dir);
       }
     } else {
-      // ضد الصديق: يجب تحديث موقعه بناءً على بيانات الشبكة القادمة
       if (networkService.remotePlayer != null) {
         remotePlayer.position.x = networkService.remotePlayer!.x;
         remotePlayer.position.y = networkService.remotePlayer!.y;
@@ -130,7 +111,6 @@ class BattleGame extends FlameGame with TapDetector {
     updateBullets(dt);
     checkCollisions();
 
-    // إرسال حالة اللاعب للشبكة
     if (networkService.localPlayer != null) {
       networkService.sendState(
         networkService.localPlayer!.copyWith(
@@ -160,7 +140,6 @@ class BattleGame extends FlameGame with TapDetector {
   void checkCollisions() {
     for (final bullet in bullets.toList()) {
       if (isSinglePlayer) {
-        // 1. تصادم رصاصة اللاعب مع العدو
         if (!bullet.isEnemy && bullet.position.distanceTo(enemy.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
@@ -172,11 +151,10 @@ class BattleGame extends FlameGame with TapDetector {
           }
         }
         
-        // **جديد: 2. تصادم رصاصة العدو مع اللاعب**
         if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
-          player.health--; // تنقص صحة اللاعب
+          player.health--;
 
           if (player.health <= 0) {
             gameOver = true;
@@ -184,7 +162,6 @@ class BattleGame extends FlameGame with TapDetector {
           }
         }
       } else {
-        // منطق 1v1 مع صديق (للشبكة)
         if (!bullet.isEnemy && bullet.position.distanceTo(remotePlayer.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
@@ -199,7 +176,6 @@ class BattleGame extends FlameGame with TapDetector {
 
   @override
   void onTapDown(TapDownInfo info) {
-    // اللاعب يطلق النار (ليس عدواً)
     shoot(false, Vector2(player.position.x + 32, player.position.y), Vector2(1, 0));
   }
 }
