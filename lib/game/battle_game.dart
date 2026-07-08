@@ -12,11 +12,11 @@ import 'player_controller.dart';
 
 class BattleGame extends FlameGame with TapDetector {
   final NetworkService networkService;
-  final bool isSinglePlayer; // متغير جديد للاختيار
+  final bool isSinglePlayer; 
 
   late final PlayerController player;
-  late final EnemyController enemy; // في حالة العدو الروبوت
-  late final PlayerController remotePlayer; // في حالة اللاعب الصديق
+  late final EnemyController enemy; 
+  late final PlayerController remotePlayer; 
   late final HudOverlay hud;
 
   final Random random = Random();
@@ -24,10 +24,11 @@ class BattleGame extends FlameGame with TapDetector {
 
   int score = 0;
   bool gameOver = false;
+  double _enemyShootTimer = 0; // **جديد: مؤقت لإطلاق نار العدو**
 
   BattleGame({
     required this.networkService,
-    this.isSinglePlayer = false, // افتراضي: ضد صديق
+    this.isSinglePlayer = false, 
   });
 
   @override
@@ -56,7 +57,7 @@ class BattleGame extends FlameGame with TapDetector {
       // الوضع الجماعي: أنشئ مكاناً للاعب الصديق
       remotePlayer = PlayerController(
         position: Vector2(size.x - 120, 110),
-        isLocal: false, // ليس أنت، بل الصديق
+        isLocal: false, 
       );
       add(remotePlayer);
     }
@@ -65,23 +66,28 @@ class BattleGame extends FlameGame with TapDetector {
     add(hud);
   }
 
-  void shoot() {
+  // **جديد: دالة إطلاق النار تدعم تحديد من أطلق (أنت أم العدو)**
+  void shoot(bool isEnemyBullet, Vector2 position, Vector2 direction) {
     if (gameOver) return;
 
     final bullet = BulletController(
-      position: Vector2(player.position.x + 32, player.position.y),
-      direction: Vector2(1, 0),
+      position: position,
+      direction: direction,
+      isEnemy: isEnemyBullet, // تمرير ما إذا كانت رصاصة عدو أم لا
     );
 
     bullets.add(bullet);
     add(bullet);
 
-    networkService.sendShoot(
-      x: bullet.position.x,
-      y: bullet.position.y,
-      dx: 1,
-      dy: 0,
-    );
+    // إرسال الشبكة فقط إذا كان اللاعب هو من أطلق
+    if (!isEnemyBullet) {
+      networkService.sendShoot(
+        x: bullet.position.x,
+        y: bullet.position.y,
+        dx: 1,
+        dy: 0,
+      );
+    }
   }
 
   @override
@@ -104,6 +110,15 @@ class BattleGame extends FlameGame with TapDetector {
     if (isSinglePlayer) {
       // ضد الروبوت: يتبعك
       enemy.follow(player.position, dt, size);
+      
+      // **جديد: العدو يطلق النار**
+      _enemyShootTimer += dt;
+      if (_enemyShootTimer >= 0.8) {
+        _enemyShootTimer = 0;
+        // حساب اتجاه الرصاصة من العدو نحو اللاعب
+        Vector2 dir = (player.position - enemy.position).normalized();
+        shoot(true, enemy.position.clone(), dir);
+      }
     } else {
       // ضد الصديق: يجب تحديث موقعه بناءً على بيانات الشبكة القادمة
       if (networkService.remotePlayer != null) {
@@ -143,11 +158,10 @@ class BattleGame extends FlameGame with TapDetector {
   }
 
   void checkCollisions() {
-    // فحص التصادم مع الخصم
-    if (isSinglePlayer) {
-      // مع الروبوت
-      for (final bullet in bullets.toList()) {
-        if (bullet.position.distanceTo(enemy.position) < 30) {
+    for (final bullet in bullets.toList()) {
+      if (isSinglePlayer) {
+        // 1. تصادم رصاصة اللاعب مع العدو
+        if (!bullet.isEnemy && bullet.position.distanceTo(enemy.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
           enemy.hit();
@@ -157,31 +171,35 @@ class BattleGame extends FlameGame with TapDetector {
             enemy.reset(random, size);
           }
         }
-      }
-
-      if (player.position.distanceTo(enemy.position) < 32) {
-        gameOver = true;
-        networkService.sendGameOver('remote');
-      }
-    } else {
-      // مع الصديق
-      for (final bullet in bullets.toList()) {
-        if (bullet.position.distanceTo(remotePlayer.position) < 30) {
+        
+        // **جديد: 2. تصادم رصاصة العدو مع اللاعب**
+        if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
           bullet.removeFromParent();
           bullets.remove(bullet);
-          // هنا نرسل للشبكة أن الرصاصة أصابت الصديق
-        }
-      }
+          player.health--; // تنقص صحة اللاعب
 
-      if (player.position.distanceTo(remotePlayer.position) < 32) {
-        gameOver = true;
-        networkService.sendGameOver('remote');
+          if (player.health <= 0) {
+            gameOver = true;
+            networkService.sendGameOver('remote');
+          }
+        }
+      } else {
+        // منطق 1v1 مع صديق (للشبكة)
+        if (!bullet.isEnemy && bullet.position.distanceTo(remotePlayer.position) < 30) {
+          bullet.removeFromParent();
+          bullets.remove(bullet);
+        }
+        if (bullet.isEnemy && bullet.position.distanceTo(player.position) < 30) {
+          bullet.removeFromParent();
+          bullets.remove(bullet);
+        }
       }
     }
   }
 
   @override
   void onTapDown(TapDownInfo info) {
-    shoot();
+    // اللاعب يطلق النار (ليس عدواً)
+    shoot(false, Vector2(player.position.x + 32, player.position.y), Vector2(1, 0));
   }
 }
