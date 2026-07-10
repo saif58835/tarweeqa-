@@ -18,14 +18,14 @@ class PlayerController extends PositionComponent with TapCallbacks, DragCallback
   PlayerController({
     required super.position,
   }) : super(
-          size: Vector2(44, 44), // حجم الطائرة
+          size: Vector2(44, 44),
           anchor: Anchor.center,
         );
 
   @override
   Future<void> onLoad() async {
     super.onLoad();
-    // عصا التحكم في الزاوية اليسرى
+
     _joystick = VirtualJoystick(
       onUpdate: (direction) {
         left = direction.x < -0.5;
@@ -35,27 +35,29 @@ class PlayerController extends PositionComponent with TapCallbacks, DragCallback
         fire = false;
       },
     );
+
     add(_joystick);
   }
 
   @override
   void render(Canvas canvas) {
     super.render(canvas);
-    
-    // رسم جسم الطائرة
+
     final path = Path();
-    // مقدمة الطائرة (مثلث متجه للأمام)
+
+    // جسم الطائرة
     path.moveTo(22, 0);
     path.lineTo(-22, -18);
     path.lineTo(-10, 0);
     path.lineTo(-22, 18);
     path.close();
 
-    // إضافة ذيل الطائرة
+    // الذيل
     path.moveTo(-16, -8);
     path.lineTo(-26, -14);
     path.lineTo(-26, -2);
     path.close();
+
     path.moveTo(-16, 8);
     path.lineTo(-26, 14);
     path.lineTo(-26, 2);
@@ -63,44 +65,82 @@ class PlayerController extends PositionComponent with TapCallbacks, DragCallback
 
     canvas.drawPath(path, bodyPaint);
 
-    // رسم قمرة القيادة (الزجاج)
-    canvas.drawCircle(const Offset(8, 0), 8, cockpitPaint);
+    // قمرة القيادة
+    canvas.drawCircle(
+      const Offset(8, 0),
+      8,
+      cockpitPaint,
+    );
   }
 }
 
-// (اترك كلاس VirtualJoystick في نهاية الملف كما هو - بدون تغيير)
+
+// عصا التحكم الافتراضية
 class VirtualJoystick extends Component with DragCallbacks {
   final void Function(Vector2 direction) onUpdate;
+
   Vector2 _dragPosition = Vector2.zero();
   Vector2 _position = Vector2.zero();
-  
-  VirtualJoystick({required this.onUpdate});
+
+  VirtualJoystick({
+    required this.onUpdate,
+  });
 
   @override
   void onLoad() {
     super.onLoad();
-    _position = Vector2(80, 80); 
+    _position = Vector2(80, 80);
   }
 
   @override
   void render(Canvas canvas) {
-    canvas.drawCircle(Offset(_position.x, _position.y), 50, Paint()..color = Colors.white.withOpacity(0.1));
-    final dragOffset = _dragPosition.clamp(Vector2(-35, -35), Vector2(35, 35));
-    canvas.drawCircle(Offset(_position.x + dragOffset.x, _position.y + dragOffset.y), 25, Paint()..color = Colors.white.withOpacity(0.3));
+    canvas.drawCircle(
+      Offset(_position.x, _position.y),
+      50,
+      Paint()..color = Colors.white.withOpacity(0.1),
+    );
+
+    // تم تعديل هذا الجزء
+    final dragOffset = Vector2(
+      _dragPosition.x.clamp(-35, 35),
+      _dragPosition.y.clamp(-35, 35),
+    );
+
+    canvas.drawCircle(
+      Offset(
+        _position.x + dragOffset.x,
+        _position.y + dragOffset.y,
+      ),
+      25,
+      Paint()..color = Colors.white.withOpacity(0.3),
+    );
   }
 
+
   @override
-  void onDragStart(DragStartInfo info) { _updateDrag(info.localPosition); }
+  void onDragStart(DragStartEvent event) {
+    _updateDrag(event.localPosition);
+  }
+
+
   @override
-  void onDragUpdate(DragUpdateInfo info) { _updateDrag(info.localPosition); }
+  void onDragUpdate(DragUpdateEvent event) {
+    _updateDrag(event.localPosition);
+  }
+
+
   @override
-  void onDragEnd(DragEndInfo info) {
+  void onDragEnd(DragEndEvent event) {
     _dragPosition = Vector2.zero();
     onUpdate(Vector2.zero());
   }
+
+
   void _updateDrag(Vector2 localPosition) {
     final diff = localPosition - _position;
+
     _dragPosition = diff;
+
     onUpdate(diff);
   }
 }
