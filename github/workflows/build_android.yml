@@ -9,14 +9,26 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
       - name: Checkout code
         uses: actions/checkout@v4
+
 
       - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
+
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+
+      - name: Install Android SDK 35
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
@@ -25,16 +37,26 @@ jobs:
           channel: stable
           cache: false
 
+
       - name: Clean project
         run: |
           flutter clean
           rm -rf ~/.gradle/caches
+          rm -rf android/.gradle
+          rm -rf build
+
 
       - name: Get packages
         run: flutter pub get
 
+
+      - name: Check Flutter
+        run: flutter doctor -v
+
+
       - name: Build APK
         run: flutter build apk --release
+
 
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
