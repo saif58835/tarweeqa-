@@ -16,25 +16,27 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
 
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: '3.24.5'
+          flutter-version: "3.24.5"
           channel: stable
-          cache: true
+          cache: false
 
-      - name: Flutter Clean
-        run: flutter clean
+      - name: Clean project
+        run: |
+          flutter clean
+          rm -rf ~/.gradle/caches
 
-      - name: Get Packages
+      - name: Get packages
         run: flutter pub get
 
       - name: Build APK
         run: flutter build apk --release
 
-      - name: Upload APK
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: app-release-apk
