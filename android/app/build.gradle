@@ -34,7 +34,7 @@ apply plugin: 'com.google.firebase.crashlytics'
 android {
     namespace "com.example.tarweeqa"
 
-    compileSdk 34
+    compileSdk 35
 
     ndkVersion flutter.ndkVersion
 
@@ -55,7 +55,7 @@ android {
         applicationId "com.example.tarweeqa"
 
         minSdk 23
-        targetSdk 34
+        targetSdk 35
 
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -92,7 +92,6 @@ android {
     buildTypes {
         release {
             signingConfig signingConfigs.release
-
             minifyEnabled false
 
             proguardFiles getDefaultProguardFile(
